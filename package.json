@@ -9,7 +9,10 @@
     "start": "node server.js",
     "start:dev": "concurrently \"npm run dev\" \"npm run server:dev\"",
     "server:dev": "nodemon server.js",
-    "build": "vite build",
+    "build": "npm run build:frontend",
+    "build:frontend": "vite build",
+    "build:backend": "echo \"No build step needed for backend\"",
+    "heroku-postbuild": "npm run build:backend",
     "preview": "vite preview",
     "build:dev": "node build.js"
   },
@@ -32,7 +35,7 @@
     "vite": "^5.1.4"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   },
   "jest": {
     "transform": {
