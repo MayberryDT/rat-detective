@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rat Detective: Whisker Wars</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 20px;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script type="module">
+        import { initScene } from './src/scene.js?v=2';
+        try {
+            console.log('Starting game initialization...');
+            const { scene, camera, renderer, player } = await initScene();
+            console.log('Game initialized successfully', {
+                sceneChildren: scene.children.length,
+                cameraPosition: camera.position,
+                playerPosition: player.position
+            });
+        } catch (error) {
+            console.error('Failed to initialize game:', error);
+            document.getElementById('game-container').innerHTML = `
+                <div style="color: white; padding: 20px;">
+                    Error initializing game. Please check console for details.
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html> 

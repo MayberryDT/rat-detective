@@ -1,0 +1,28 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rat Detective: GoldenEye Clone Tech Stack
+
+## Frontend
+- **Framework**: ThreeJS (for 3D game)
+- **State Management**: JavaScript objects
+- **API Communication**: WebSocket
+- **PWA Features**: Service workers for caching
+- **Responsive Design**: CSS Grid/Flexbox
+
+## Backend
+- **Framework**: Node.js with Express
+
+## Data Storage
+- **Primary Storage**: In-memory
+
+## Deployment
+- **Backend**: Heroku
+- **Frontend**: Netlify
+- **Storage**: In-memory
+
+## Security
+- **Communication**: HTTPS
+- **Monitoring**: Console logging
