@@ -10,7 +10,10 @@ export function initMouseControls(player, camera) {
         isLocked: false,
         verticalAngle: 0,
         horizontalAngle: 0,
-        mouseSensitivity: 0.002
+        mouseSensitivity: 0.002,
+        touchSensitivity: 0.005,
+        lastTouchX: 0,
+        lastTouchY: 0
     };
 
     // Set initial camera position relative to player
@@ -23,8 +26,88 @@ export function initMouseControls(player, camera) {
         return controls;
     }
 
+    // Add touch camera controls for mobile
+    if ('ontouchstart' in window) {
+        // Create camera control area that covers the whole screen
+        const cameraControl = document.createElement('div');
+        cameraControl.id = 'camera-control';
+        cameraControl.style.position = 'absolute';
+        cameraControl.style.left = '0';
+        cameraControl.style.top = '0';
+        cameraControl.style.width = '100%';
+        cameraControl.style.height = '100%';
+        cameraControl.style.zIndex = '1';
+        cameraControl.style.pointerEvents = 'none'; // Initially disable pointer events
+        document.body.appendChild(cameraControl);
+
+        let touchActive = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        // Handle touch events on the document level
+        document.addEventListener('touchstart', (event) => {
+            // Check if the touch is on a UI element
+            const target = event.target;
+            if (target.tagName.toLowerCase() === 'button' || 
+                target.id === 'joystick-container' ||
+                target.closest('#joystick-container')) {
+                return; // Don't handle touch events on UI elements
+            }
+
+            event.preventDefault();
+            touchActive = true;
+            const touch = event.touches[0];
+            controls.lastTouchX = touch.clientX;
+            controls.lastTouchY = touch.clientY;
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (event) => {
+            if (!touchActive) return;
+
+            // If the touch started on a UI element, don't handle it
+            if (Math.abs(event.touches[0].clientX - touchStartX) < 10 &&
+                Math.abs(event.touches[0].clientY - touchStartY) < 10) {
+                return;
+            }
+
+            event.preventDefault();
+            const touch = event.touches[0];
+            const movementX = touch.clientX - controls.lastTouchX;
+            const movementY = touch.clientY - controls.lastTouchY;
+
+            // Update player rotation (horizontal movement)
+            player.rotation.y -= movementX * controls.touchSensitivity;
+
+            // Update vertical angle with wider range
+            controls.verticalAngle = Math.max(
+                -VERTICAL_LIMIT,
+                Math.min(VERTICAL_LIMIT, controls.verticalAngle + movementY * controls.touchSensitivity)
+            );
+
+            // Store vertical angle in player for projectile firing
+            player.userData.verticalAngle = controls.verticalAngle;
+
+            // Update camera position
+            updateCamera(camera, player, controls.verticalAngle);
+
+            controls.lastTouchX = touch.clientX;
+            controls.lastTouchY = touch.clientY;
+        }, { passive: false });
+
+        document.addEventListener('touchend', () => {
+            touchActive = false;
+        });
+
+        document.addEventListener('touchcancel', () => {
+            touchActive = false;
+        });
+    }
+
+    // Desktop mouse controls
     gameContainer.addEventListener('click', () => {
-        if (!controls.isLocked) {
+        if (!controls.isLocked && !('ontouchstart' in window)) {
             gameContainer.requestPointerLock();
         }
     });
