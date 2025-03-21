@@ -24,7 +24,8 @@ export class ServerCollisionSystem {
       return (
         obj.userData?.isPipeSide === true || 
         obj.userData?.colliderType === 'wall' ||
-        obj.name?.includes('wall')
+        obj.name?.includes('wall') ||
+        obj.name?.includes('pipe')
       );
     });
 

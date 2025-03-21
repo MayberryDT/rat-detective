@@ -86,8 +86,15 @@ export function setupWebSocketServer(io) {
           data.position.z - player.lastPosition.z
         );
 
+        // Convert position to THREE.Vector3
+        const position = new THREE.Vector3(
+          data.position.x,
+          data.position.y,
+          data.position.z
+        );
+
         // Validate the new position
-        const validation = collisionSystem.validatePosition(data.position, movement);
+        const validation = collisionSystem.validatePosition(position, movement);
         
         if (!validation.isValid) {
           // If position is invalid, use the adjusted position
