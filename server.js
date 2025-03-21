@@ -3,7 +3,7 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const THREE = require('three');
 const { ServerCollisionSystem } = require('./src/server/collision.js');
-const { createMap } = require('./src/map.js');
+const { createMap } = require('./src/server/map.js');
 
 const app = express();
 const httpServer = createServer(app);

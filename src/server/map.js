@@ -1,8 +1,7 @@
-// Last updated: 2025-03-20T03:43:34.642Z
-import { BoxGeometry, Mesh, MeshPhongMaterial, Vector3, Group } from 'three';
-import * as THREE from 'three';
+const { BoxGeometry, Mesh, MeshPhongMaterial, Vector3, Group } = require('three');
+const THREE = require('three');
 
-export class SewerMap {
+class ServerMap {
   constructor() {
     this.width = 200;  // Larger map for city layout
     this.length = 200;
@@ -171,6 +170,8 @@ export class SewerMap {
   }
 }
 
-export function createMap() {
-  return new SewerMap();
-} 
+function createMap() {
+  return new ServerMap();
+}
+
+module.exports = { createMap }; 
