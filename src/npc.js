@@ -15,7 +15,7 @@ export const MOVEMENT_PATTERNS = {
 };
 
 // NPC properties
-const NPC_COUNT = 5; // How many NPCs to create
+const NPC_COUNT = 20; // Increased from 5 to 20
 const NPC_HEALTH = 100; // Changed from 30 to 100 to make percentages clearer
 const NPC_MOVEMENT_SPEED = 0.02;
 const NPC_DETECTION_RADIUS = 5;
@@ -31,18 +31,22 @@ const npcLastFireTimes = new Map();
 export class NPC {
   constructor(scene, position, options = {}) {
     // Create rat model with NPC options
-    const { ratGroup } = createRat({ 
+    const { ratGroup, ratMesh } = createRat({ 
       color: options.color || 0xFF0000, // Default red
       isNPC: true 
     });
     this.rat = ratGroup;
+    this.ratMesh = ratMesh;
     this.scene = scene;
     
-    // Set initial position
-    this.rat.position.copy(position);
+    // Set initial position - adjust y to account for rat model height
+    const adjustedPosition = position.clone();
+    adjustedPosition.y = 0; // Set to ground level since rat model is already positioned correctly
+    this.rat.position.copy(adjustedPosition);
     
     // Set NPC properties
-    this.health = options.health || 100;
+    this.health = NPC_HEALTH;
+    this.maxHealth = NPC_HEALTH;
     this.speed = options.speed || 0.03;
     this.pattern = options.pattern || MOVEMENT_PATTERNS.PATROL;
     this.patrolDistance = options.patrolDistance || 5;
@@ -62,72 +66,90 @@ export class NPC {
     
     // Add rat to scene
     scene.add(this.rat);
+    this.rat.name = 'npc-rat';
     
-    // Add health display
+    // Setup collision properties
+    this.rat.userData = {
+      isNPC: true,
+      health: this.health,
+      maxHealth: this.maxHealth,
+      hitboxWidth: NPC_HITBOX_WIDTH,
+      hitboxHeight: NPC_HITBOX_HEIGHT,
+      hitboxDepth: NPC_HITBOX_DEPTH
+    };
+    
+    // Add health display using same system as player
     this.createHealthDisplay();
   }
   
-  // Set the rat's color (not needed anymore as we set it during creation)
-  setColor(color) {
-    this.rat.traverse(child => {
-      if (child instanceof THREE.Mesh && child.material) {
-        // Clone the material to avoid affecting other rats
-        child.material = child.material.clone();
-        child.material.color.set(color);
-      }
-    });
-  }
-  
-  // Create a health bar above the NPC
+  // Create a health bar above the NPC using same style as player
   createHealthDisplay() {
     // Create a health bar container
-    this.healthBar = new THREE.Group();
+    const healthBar = new THREE.Group();
     
-    // Create the background bar
-    const bgGeometry = new THREE.BoxGeometry(1, 0.1, 0.1);
-    const bgMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
-    this.healthBackground = new THREE.Mesh(bgGeometry, bgMaterial);
+    // Create the background bar - more translucent
+    const bgGeometry = new THREE.BoxGeometry(0.8, 0.08, 0.05);
+    const bgMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x333333,
+      transparent: true,
+      opacity: 0.4
+    });
+    const background = new THREE.Mesh(bgGeometry, bgMaterial);
     
-    // Create the actual health indicator
-    const healthGeometry = new THREE.BoxGeometry(1, 0.1, 0.1);
-    const healthMaterial = new THREE.MeshBasicMaterial({ color: 0x00FF00 });
-    this.healthIndicator = new THREE.Mesh(healthGeometry, healthMaterial);
+    // Create the health indicator - more translucent
+    const healthGeometry = new THREE.BoxGeometry(0.8, 0.08, 0.05);
+    const healthMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x00FF00,
+      transparent: true,
+      opacity: 0.6
+    });
+    const indicator = new THREE.Mesh(healthGeometry, healthMaterial);
     
     // Add to health bar group
-    this.healthBar.add(this.healthBackground);
-    this.healthBar.add(this.healthIndicator);
+    healthBar.add(background);
+    healthBar.add(indicator);
     
-    // Position the health bar above the rat
-    this.healthBar.position.y = 1.5;
+    // Position above the rat's head
+    healthBar.position.y = 1.2;
     
-    // Add to rat
-    this.rat.add(this.healthBar);
+    // Add to rat and store references
+    this.rat.add(healthBar);
+    this.rat.userData.healthBar = healthBar;
+    this.rat.userData.healthIndicator = indicator;
   }
   
-  // Update health display
+  // Update health display to match player's style
   updateHealthDisplay() {
-    // Scale the health indicator based on remaining health percentage
-    const healthPercent = this.health / 100;
-    this.healthIndicator.scale.x = healthPercent;
-    this.healthIndicator.position.x = (healthPercent - 1) / 2;
+    if (!this.rat.userData.healthIndicator) return;
     
-    // Change color based on health
+    const healthPercent = this.health / this.maxHealth;
+    const indicator = this.rat.userData.healthIndicator;
+    
+    // Update scale and position
+    indicator.scale.x = Math.max(0, healthPercent);
+    indicator.position.x = (healthPercent - 1) / 2;
+    
+    // Update color based on health
+    const color = indicator.material.color;
     if (healthPercent > 0.6) {
-      this.healthIndicator.material.color.set(0x00FF00); // Green
+      color.setHex(0x00FF00); // Green
     } else if (healthPercent > 0.3) {
-      this.healthIndicator.material.color.set(0xFFFF00); // Yellow
+      color.setHex(0xFFFF00); // Yellow
     } else {
-      this.healthIndicator.material.color.set(0xFF0000); // Red
+      color.setHex(0xFF0000); // Red
     }
   }
   
   // Take damage from a hit
   takeDamage(amount) {
-    this.health -= amount;
+    this.health = Math.max(0, this.health - amount);
+    this.rat.userData.health = this.health;
     this.updateHealthDisplay();
     
     // Flash red to indicate damage
-    this.flash(0xFF0000);
+    if (this.ratMesh) {
+      flashNPC(this.ratMesh);
+    }
     
     // Check if NPC is defeated
     if (this.health <= 0) {
@@ -137,35 +159,27 @@ export class NPC {
     return this.health;
   }
   
-  // Flash the rat a color to indicate damage or healing
-  flash(color) {
-    const originalColor = this.rat.children[0]?.material?.color.clone();
-    
-    if (originalColor) {
-      // Flash to the damage color
-      this.setColor(color);
-      
-      // Return to original color after a short delay
-      setTimeout(() => {
-        this.setColor(originalColor);
-      }, 200);
-    }
-  }
-  
-  // Handle NPC death
+  // Handle NPC death similar to player death
   die() {
-    // Add death animation or effects here
-    
     // Drop the rat to the ground
     this.pattern = MOVEMENT_PATTERNS.STATIONARY;
     this.rat.rotation.z = Math.PI / 2; // Lay on side
     
     // Hide health bar
-    this.healthBar.visible = false;
+    if (this.rat.userData.healthBar) {
+      this.rat.userData.healthBar.visible = false;
+    }
+    
+    // Disable AI and collisions
+    this.rat.userData.isDead = true;
+    
+    console.log('[COMBAT] NPC defeated');
     
     // Remove NPC after a delay
     setTimeout(() => {
-      this.scene.remove(this.rat);
+      if (this.rat.parent === this.scene) {
+        this.scene.remove(this.rat);
+      }
     }, 3000);
   }
   
@@ -404,144 +418,204 @@ function updateNPCs(scene, player, collisionSystem) {
 }
 
 /**
- * Find a valid spawn point that doesn't collide with geometry
+ * Find a valid spawn point that doesn't collide with geometry and isn't inside a building
  * @param {CollisionSystem} collisionSystem - The collision system
+ * @param {SewerMap} map - The map containing buildings
  * @param {Set} usedPositions - Set of positions already used
  * @param {number} attempts - Maximum number of attempts to find valid position
  * @returns {THREE.Vector3} Valid spawn position or null if none found
  */
-function findValidSpawnPoint(collisionSystem, usedPositions = new Set(), attempts = 20) {
-    // Define safe spots in different areas of the map
-    const safeSpots = [
-        new THREE.Vector3(30, 0, 30),    // Northeast
-        new THREE.Vector3(-30, 0, 30),   // Northwest
-        new THREE.Vector3(30, 0, -30),   // Southeast
-        new THREE.Vector3(-30, 0, -30),  // Southwest
-        new THREE.Vector3(0, 0, 50),     // North
-        new THREE.Vector3(0, 0, -50),    // South
-        new THREE.Vector3(50, 0, 0),     // East
-        new THREE.Vector3(-50, 0, 0),    // West
-        new THREE.Vector3(40, 0, 40),    // Far Northeast
-        new THREE.Vector3(-40, 0, 40),   // Far Northwest
-        new THREE.Vector3(40, 0, -40),   // Far Southeast
-        new THREE.Vector3(-40, 0, -40),  // Far Southwest
+function findValidSpawnPoint(collisionSystem, map, usedPositions = new Set(), attempts = 20) {
+    // Define spawn zones across the entire map for better distribution
+    const spawnZones = [
+        // Main street intersections with smaller radius to prevent bunching
+        { x: -60, z: -30, radius: 2.5 },
+        { x: -20, z: -30, radius: 2.5 },
+        { x: 20, z: -30, radius: 2.5 },
+        { x: 60, z: -30, radius: 2.5 },
+        { x: -60, z: 30, radius: 2.5 },
+        { x: -20, z: 30, radius: 2.5 },
+        { x: 20, z: 30, radius: 2.5 },
+        { x: 60, z: 30, radius: 2.5 },
+        
+        // Street segments with smaller radius
+        { x: -40, z: -30, radius: 2 },
+        { x: 0, z: -30, radius: 2 },
+        { x: 40, z: -30, radius: 2 },
+        { x: -40, z: 30, radius: 2 },
+        { x: 0, z: 30, radius: 2 },
+        { x: 40, z: 30, radius: 2 },
+        
+        // Vertical streets with distributed points
+        { x: -60, z: -15, radius: 2 },
+        { x: -60, z: 0, radius: 2 },
+        { x: -60, z: 15, radius: 2 },
+        { x: -20, z: -15, radius: 2 },
+        { x: -20, z: 0, radius: 2 },
+        { x: -20, z: 15, radius: 2 },
+        { x: 20, z: -15, radius: 2 },
+        { x: 20, z: 0, radius: 2 },
+        { x: 20, z: 15, radius: 2 },
+        { x: 60, z: -15, radius: 2 },
+        { x: 60, z: 0, radius: 2 },
+        { x: 60, z: 15, radius: 2 },
+        
+        // Additional points along horizontal streets
+        { x: -50, z: -30, radius: 2 },
+        { x: -30, z: -30, radius: 2 },
+        { x: -10, z: -30, radius: 2 },
+        { x: 10, z: -30, radius: 2 },
+        { x: 30, z: -30, radius: 2 },
+        { x: 50, z: -30, radius: 2 },
+        { x: -50, z: 30, radius: 2 },
+        { x: -30, z: 30, radius: 2 },
+        { x: -10, z: 30, radius: 2 },
+        { x: 10, z: 30, radius: 2 },
+        { x: 30, z: 30, radius: 2 },
+        { x: 50, z: 30, radius: 2 },
+        
+        // Central area points
+        { x: -40, z: 0, radius: 2 },
+        { x: -30, z: 0, radius: 2 },
+        { x: -10, z: 0, radius: 2 },
+        { x: 0, z: 0, radius: 2 },
+        { x: 10, z: 0, radius: 2 },
+        { x: 30, z: 0, radius: 2 },
+        { x: 40, z: 0, radius: 2 }
     ];
 
-    // Try safe spots first
-    for (const spot of safeSpots) {
-        // Skip if this position is already used
-        const posKey = `${spot.x},${spot.y},${spot.z}`;
-        if (usedPositions.has(posKey)) {
-            continue;
-        }
+    // Add minimum distance check between spawn points
+    const MIN_DISTANCE_BETWEEN_SPAWNS = 8; // Minimum units between NPCs
 
-        // Check if there's space above (not inside a building)
-        const upwardCollision = collisionSystem.checkCollision(
-            spot,
-            new THREE.Vector3(0, 1, 0)
-        );
-        
-        if (!upwardCollision.hasCollision) {
-            // Add a small random offset to prevent perfect alignment
-            const offset = new THREE.Vector3(
-                (Math.random() - 0.5) * 4,
-                0,
-                (Math.random() - 0.5) * 4
-            );
-            const finalPosition = spot.clone().add(offset);
-            
-            // Mark this area as used
-            usedPositions.add(posKey);
-            console.log('Found valid spawn at safe spot:', finalPosition);
-            return finalPosition;
-        }
-    }
-
-    // If safe spots don't work, try random positions with minimum distance from other NPCs
+    // Try to find a valid position within the given number of attempts
     for (let i = 0; i < attempts; i++) {
-        const testPosition = new THREE.Vector3(
-            Math.random() * 160 - 80,  // -80 to 80 (slightly inward from map edges)
-            0,                         // Ground level
-            Math.random() * 160 - 80   // -80 to 80
-        );
+        // Pick a random spawn zone
+        const zone = spawnZones[Math.floor(Math.random() * spawnZones.length)];
         
-        // Check minimum distance from used positions
+        // Generate a random position within the zone
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * zone.radius;
+        const x = zone.x + Math.cos(angle) * distance;
+        const z = zone.z + Math.sin(angle) * distance;
+        const position = new THREE.Vector3(x, 0, z);
+
+        // Check minimum distance from other spawn points
         let tooClose = false;
-        for (const posKey of usedPositions) {
-            const [x, y, z] = posKey.split(',').map(Number);
-            const usedPos = new THREE.Vector3(x, y, z);
-            if (testPosition.distanceTo(usedPos) < 10) { // Minimum 10 units apart
+        for (const usedPos of usedPositions) {
+            const [usedX, usedZ] = usedPos.split(',').map(Number);
+            const usedPosition = new THREE.Vector3(usedX, 0, usedZ);
+            if (position.distanceTo(usedPosition) < MIN_DISTANCE_BETWEEN_SPAWNS) {
                 tooClose = true;
                 break;
             }
         }
-        if (tooClose) continue;
 
-        // Check if there's space above (not inside a building)
-        const upwardCollision = collisionSystem.checkCollision(
-            testPosition,
-            new THREE.Vector3(0, 1, 0)
-        );
-        
-        if (!upwardCollision.hasCollision) {
-            const posKey = `${testPosition.x},${testPosition.y},${testPosition.z}`;
-            usedPositions.add(posKey);
-            console.log('Found valid spawn at random position:', testPosition);
-            return testPosition;
+        if (tooClose) {
+            continue;
         }
 
-        if (i === attempts - 1) {
-            console.log('Collision test results:', {
-                position: testPosition,
-                upwardCollision
-            });
+        // Skip if position is already used
+        const posKey = `${position.x.toFixed(2)},${position.z.toFixed(2)}`;
+        if (usedPositions.has(posKey)) {
+            continue;
+        }
+
+        // Check if we collide with any walls or buildings
+        const collision = collisionSystem.checkCollision(position, new THREE.Vector3(0, 0, 0));
+
+        if (!collision.hasCollision) {
+            // Valid position found - mark it as used and return
+            usedPositions.add(posKey);
+            return position;
         }
     }
-    
+
+    // If all attempts fail, use a fallback position at street intersections
+    const fallbackPositions = [
+        new THREE.Vector3(-60, 0, 0),  // Middle of vertical streets
+        new THREE.Vector3(-20, 0, 0),
+        new THREE.Vector3(20, 0, 0),
+        new THREE.Vector3(60, 0, 0),
+        new THREE.Vector3(0, 0, -30),  // Middle of horizontal streets
+        new THREE.Vector3(0, 0, 30),
+        new THREE.Vector3(-40, 0, -30), // Additional fallback positions
+        new THREE.Vector3(40, 0, -30),
+        new THREE.Vector3(-40, 0, 30),
+        new THREE.Vector3(40, 0, 30),
+        new THREE.Vector3(-60, 0, -15),
+        new THREE.Vector3(-20, 0, -15),
+        new THREE.Vector3(20, 0, -15),
+        new THREE.Vector3(60, 0, -15),
+        new THREE.Vector3(-60, 0, 15),
+        new THREE.Vector3(-20, 0, 15),
+        new THREE.Vector3(20, 0, 15),
+        new THREE.Vector3(60, 0, 15),
+        new THREE.Vector3(-30, 0, 0),
+        new THREE.Vector3(30, 0, 0)
+    ];
+
+    for (const position of fallbackPositions) {
+        const posKey = `${position.x.toFixed(2)},${position.z.toFixed(2)}`;
+        if (!usedPositions.has(posKey)) {
+            console.log('Using fallback spawn position:', position.clone());
+            usedPositions.add(posKey);
+            return position;
+        }
+    }
+
     console.warn('Could not find valid spawn point after', attempts, 'attempts');
-    return new THREE.Vector3(0, 0, 0);
+    return null;
 }
 
 /**
  * Create a new NPC at a valid position
+ * @param {THREE.Scene} scene - The scene to add the NPC to
+ * @param {CollisionSystem} collisionSystem - The collision system
+ * @param {SewerMap} map - The map containing buildings
+ * @param {THREE.Vector3} position - Optional specific position, otherwise finds valid spawn
+ * @returns {NPC} The created NPC
  */
-function createNPC(scene, collisionSystem, position = null) {
+function createNPC(scene, collisionSystem, map, position = null) {
     // If no position provided, find a valid spawn point
     if (!position) {
-        position = findValidSpawnPoint(collisionSystem);
+        position = findValidSpawnPoint(collisionSystem, map);
+        if (!position) {
+            console.error('Could not find valid NPC spawn point');
+            return null;
+        }
     }
+
+    // Create NPC with random movement pattern
+    const patterns = Object.values(MOVEMENT_PATTERNS);
+    const randomPattern = patterns[Math.floor(Math.random() * patterns.length)];
     
-    // Create the rat with random appearance
-    const { ratGroup } = createRat({ isNPC: true });
+    const npc = new NPC(scene, position, {
+        pattern: randomPattern,
+        color: 0xFF0000 // Red for enemy NPCs
+    });
     
-    // Set NPC properties
-    ratGroup.name = 'npc-rat';
-    ratGroup.userData.health = NPC_HEALTH;
-    ratGroup.userData.maxHealth = NPC_HEALTH;
-    ratGroup.userData.aiState = 'idle';
-    
-    // Position the NPC
-    ratGroup.position.copy(position);
-    
-    // Add health bar
-    addHealthBar(ratGroup);
-    
-    scene.add(ratGroup);
-    console.log('Created NPC at position:', position);
-    return ratGroup;
+    return npc;
 }
 
-// Create a group of NPCs at different positions
-function createNPCs(scene, collisionSystem, count = 5) {
+/**
+ * Create multiple NPCs in the scene
+ * @param {THREE.Scene} scene - The scene to add NPCs to
+ * @param {CollisionSystem} collisionSystem - The collision system
+ * @param {SewerMap} map - The map containing buildings
+ * @param {number} count - Number of NPCs to create
+ * @returns {NPC[]} Array of created NPCs
+ */
+function createNPCs(scene, collisionSystem, map, count = NPC_COUNT) {
     const npcs = [];
     const usedPositions = new Set();
     
-    // Create NPCs at valid positions
     for (let i = 0; i < count; i++) {
-        const position = findValidSpawnPoint(collisionSystem, usedPositions);
-        const npc = createNPC(scene, collisionSystem, position);
-        if (npc) {
-            npcs.push(npc);
+        const position = findValidSpawnPoint(collisionSystem, map, usedPositions);
+        if (position) {
+            const npc = createNPC(scene, collisionSystem, map, position);
+            if (npc) {
+                npcs.push(npc);
+            }
         }
     }
     
@@ -549,7 +623,7 @@ function createNPCs(scene, collisionSystem, count = 5) {
 }
 
 /**
- * Handle NPC death
+ * Handle NPC death and respawn
  */
 function handleNPCDeath(scene, npc) {
     // Drop the rat to the ground
@@ -563,13 +637,42 @@ function handleNPCDeath(scene, npc) {
     // Disable AI and collisions
     npc.userData.isDead = true;
     
+    // Stop all movement
+    npc.userData.velocity = new THREE.Vector3(0, 0, 0);
+    npc.userData.isGrounded = true;
+    
     console.log('[COMBAT] NPC defeated');
     
-    // Remove NPC after a delay
+    // Respawn after delay (same as player's 3 second delay)
     setTimeout(() => {
-        if (npc.parent === scene) {
-            scene.remove(npc);
+        // Reset health and state
+        npc.userData.health = npc.userData.maxHealth;
+        npc.userData.isDead = false;
+        
+        // Reset health bar
+        npc.userData.healthBar.visible = true;
+        if (npc.userData.healthIndicator) {
+            npc.userData.healthIndicator.scale.x = 1;
+            npc.userData.healthIndicator.position.x = 0;
+            npc.userData.healthIndicator.material.color.setHex(0x00FF00);
         }
+        
+        // Reset rotation
+        npc.rotation.z = 0;
+        
+        // Find new spawn point
+        const spawnPoint = findValidSpawnPoint(scene.userData.collisionSystem, scene.userData.map, new Set());
+        npc.position.copy(spawnPoint);
+        npc.position.y = 0.1; // Start slightly above ground
+        
+        // Reset velocity and movement state
+        npc.userData.velocity = new THREE.Vector3(0, 0, 0);
+        npc.userData.isGrounded = true;
+        
+        debugLog(DEBUG_CATEGORIES.COMBAT, 'NPC respawned', {
+            health: npc.userData.health,
+            position: spawnPoint.clone()
+        });
     }, 3000);
 }
 
@@ -607,72 +710,63 @@ function flashNPC(npc) {
  */
 function damageNPC(scene, npc, damage) {
     // Skip if NPC is already dead
-    if (npc.userData.health <= 0) return;
+    if (npc.userData.isDead || npc.userData.health <= 0) return;
 
-    // Ensure health exists in userData
-    if (typeof npc.userData.health === 'undefined') {
-        npc.userData.health = NPC_HEALTH;
-        npc.userData.maxHealth = NPC_HEALTH;
-    }
-
-    // Apply fixed damage of 25% of max health
-    const damageAmount = npc.userData.maxHealth * 0.25;
-    npc.userData.health = Math.max(0, npc.userData.health - damageAmount);
+    // Apply damage
+    const damageAmount = 25; // Fixed damage amount like player
     
-    // Play hit sound
-    if (scene.userData.audioManager) {
-        scene.userData.audioManager.playSound(SOUND_EFFECTS.RAT_HIT);
-    }
-
-    // Update health bar display
-    if (npc.userData.healthBar && npc.userData.healthIndicator) {
-        const healthPercent = npc.userData.health / npc.userData.maxHealth;
-        const indicator = npc.userData.healthIndicator;
+    // Find the NPC instance
+    const npcInstance = scene.children
+        .find(child => child === npc || (child.type === 'Group' && child.children.includes(npc)));
+    
+    if (npcInstance && npcInstance.userData.isNPC) {
+        // Apply damage through the NPC class instance
+        npcInstance.userData.health = Math.max(0, npcInstance.userData.health - damageAmount);
         
-        // Update scale and position
-        indicator.scale.x = Math.max(0, healthPercent);
-        indicator.position.x = (healthPercent - 1) / 2;
+        // Update health bar
+        if (npcInstance.userData.healthIndicator) {
+            const healthPercent = npcInstance.userData.health / npcInstance.userData.maxHealth;
+            const indicator = npcInstance.userData.healthIndicator;
+            
+            // Update scale and position
+            indicator.scale.x = Math.max(0, healthPercent);
+            indicator.position.x = (healthPercent - 1) / 2;
+            
+            // Update color based on health
+            const color = indicator.material.color;
+            if (healthPercent > 0.6) {
+                color.setHex(0x00FF00); // Green
+            } else if (healthPercent > 0.3) {
+                color.setHex(0xFFFF00); // Yellow
+            } else {
+                color.setHex(0xFF0000); // Red
+            }
+        }
         
-        // Update color based on health
-        const color = indicator.material.color;
-        if (healthPercent > 0.6) {
-            color.setHex(0x00FF00); // Green
-        } else if (healthPercent > 0.3) {
-            color.setHex(0xFFFF00); // Yellow
+        // Visual feedback
+        flashNPC(npc);
+        
+        // Create hit effect
+        const hitPosition = npc.position.clone();
+        hitPosition.y += NPC_HITBOX_HEIGHT / 2;
+        createImpactEffect(scene, hitPosition, true);
+        
+        // Handle death if health is depleted
+        if (npcInstance.userData.health <= 0) {
+            // Play death sound
+            if (scene.userData.audioManager) {
+                scene.userData.audioManager.playSound(SOUND_EFFECTS.RAT_DEATH);
+            }
+            handleNPCDeath(scene, npc);
         } else {
-            color.setHex(0xFF0000); // Red
+            // Play hit sound
+            if (scene.userData.audioManager) {
+                scene.userData.audioManager.playSound(SOUND_EFFECTS.RAT_HIT);
+            }
+            npc.userData.aiState = 'retreat';
+            npc.userData.retreatTime = Date.now() + 1000;
         }
     }
-
-    // Visual feedback
-    flashNPC(npc);
-    
-    // Create hit effect
-    const hitPosition = npc.position.clone();
-    hitPosition.y += NPC_HITBOX_HEIGHT / 2;
-    createImpactEffect(scene, hitPosition, true);
-    
-    // Handle death if health is depleted
-    if (npc.userData.health <= 0) {
-        // Play death sound
-        if (scene.userData.audioManager) {
-            scene.userData.audioManager.playSound(SOUND_EFFECTS.RAT_DEATH);
-        }
-        handleNPCDeath(scene, npc);
-    } else {
-        npc.userData.aiState = 'retreat';
-        npc.userData.retreatTime = Date.now() + 1000;
-    }
-
-    // Debug log
-    console.log('NPC damaged:', {
-        damage: damageAmount,
-        newHealth: npc.userData.health,
-        maxHealth: npc.userData.maxHealth,
-        healthPercent: (npc.userData.health / npc.userData.maxHealth * 100).toFixed(1) + '%',
-        hasHealthBar: !!npc.userData.healthBar,
-        hasIndicator: !!npc.userData.healthIndicator
-    });
 }
 
 /**

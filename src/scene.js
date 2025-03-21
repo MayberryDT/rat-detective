@@ -40,13 +40,17 @@ export async function initScene() {
         debugLog(DEBUG_CATEGORIES.SCENE, 'Setting up collision system');
         const collisionSystem = new CollisionSystem(map);
         
+        // Store map and collision system in scene for NPC respawning
+        scene.userData.map = map;
+        scene.userData.collisionSystem = collisionSystem;
+        
         // Create player
         debugLog(DEBUG_CATEGORIES.SCENE, 'Creating player');
         const result = createRat({ isNPC: false });
         const player = result.ratGroup;
         player.name = 'player-rat';
         const usedPositions = new Set();
-        const spawnPoint = findValidSpawnPoint(collisionSystem, usedPositions);
+        const spawnPoint = findValidSpawnPoint(collisionSystem, map, usedPositions);
         player.position.copy(spawnPoint);
         player.position.y = 0.1; // Start slightly above ground
         debugLog(DEBUG_CATEGORIES.SCENE, 'Player created', { position: player.position });
@@ -72,7 +76,7 @@ export async function initScene() {
         
         // Create NPCs
         debugLog(DEBUG_CATEGORIES.SCENE, 'Creating NPCs');
-        const npcs = createNPCs(scene, collisionSystem, 10);
+        const npcs = createNPCs(scene, collisionSystem, map);
         debugLog(DEBUG_CATEGORIES.SCENE, 'NPCs created', { count: npcs.length });
         
         // Create camera first
@@ -268,7 +272,7 @@ export async function initScene() {
                                             
                                             player.rotation.z = 0;
                                             
-                                            const spawnPoint = findValidSpawnPoint(collisionSystem, new Set());
+                                            const spawnPoint = findValidSpawnPoint(collisionSystem, map, new Set());
                                             player.position.copy(spawnPoint);
                                             player.position.y = 0.1;
                                             
@@ -373,7 +377,7 @@ export async function initScene() {
                         
                         player.rotation.z = 0;
                         
-                        const spawnPoint = findValidSpawnPoint(collisionSystem, new Set());
+                        const spawnPoint = findValidSpawnPoint(collisionSystem, map, new Set());
                         player.position.copy(spawnPoint);
                         player.position.y = 0.1;
                         

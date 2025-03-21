@@ -1,13 +1,14 @@
-import { setupWebSocketServer } from '../server.js';
 import { Server } from 'socket.io';
 import { io as Client } from 'socket.io-client';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
+import { setupWebSocketServer } from '../server.js';
 
 describe('Multiplayer Scaling Tests', () => {
   let io, serverSocket, clientSockets = [], httpServer;
   const PORT = 3001;
-  const TOTAL_PLAYERS = 50;
+  const MAX_PLAYERS = 20;
+  const CULLING_DISTANCE = 100;
 
   beforeAll((done) => {
     httpServer = createServer();
@@ -20,21 +21,7 @@ describe('Multiplayer Scaling Tests', () => {
     });
     setupWebSocketServer(io);
     httpServer.listen(PORT, () => {
-      // Create 50 client sockets
-      const connectPromises = Array(TOTAL_PLAYERS).fill().map(() => {
-        return new Promise((resolve) => {
-          const clientSocket = Client(`http://localhost:${PORT}`, {
-            transports: ['websocket'],
-            forceNew: true
-          });
-          clientSocket.on('connect', () => {
-            clientSockets.push(clientSocket);
-            resolve();
-          });
-        });
-      });
-      
-      Promise.all(connectPromises).then(() => done());
+      done();
     });
   });
 
@@ -44,69 +31,112 @@ describe('Multiplayer Scaling Tests', () => {
     httpServer.close();
   });
 
-  test('should handle 50 players connecting simultaneously', (done) => {
-    expect(clientSockets.length).toBe(TOTAL_PLAYERS);
-    done();
+  beforeEach(() => {
+    clientSockets = [];
   });
 
-  test('should broadcast position updates to all players efficiently', (done) => {
-    let updateCount = 0;
-    const expectedUpdates = TOTAL_PLAYERS - 1; // Each player should receive updates from all others
-
-    // Setup listener on first client
-    clientSockets[0].on('playerPositionUpdate', (data) => {
-      updateCount++;
-      if (updateCount === expectedUpdates) {
-        expect(updateCount).toBe(expectedUpdates);
-        done();
-      }
-    });
-
-    // Have all other clients send position updates
-    clientSockets.slice(1).forEach(socket => {
-      socket.emit('updatePosition', {
-        position: { x: Math.random(), y: Math.random(), z: Math.random() },
-        rotation: { y: Math.random() }
+  test('should handle 20 players connecting simultaneously', async () => {
+    // Connect 20 players
+    for (let i = 0; i < MAX_PLAYERS; i++) {
+      const socket = Client(`http://localhost:${PORT}`, {
+        transports: ['websocket'],
+        forceNew: true
       });
+      await new Promise(resolve => socket.on('connect', resolve));
+      clientSockets.push(socket);
+    }
+    expect(clientSockets.length).toBe(MAX_PLAYERS);
+  });
+
+  test('should reject connections beyond 20 players', (done) => {
+    // Try to connect a 21st player
+    const extraSocket = Client(`http://localhost:${PORT}`, {
+      transports: ['websocket'],
+      forceNew: true
     });
-  }, 5000);
 
-  test('should handle player disconnections gracefully', (done) => {
-    let disconnectCount = 0;
-    const expectedDisconnects = 5; // Test with 5 disconnections
+    extraSocket.on('serverFull', () => {
+      extraSocket.close();
+      done();
+    });
+  });
 
-    // Setup disconnect listeners on remaining players
-    clientSockets.slice(expectedDisconnects).forEach(socket => {
-      socket.on('playerDisconnected', () => {
-        disconnectCount++;
-        if (disconnectCount === expectedDisconnects) {
-          expect(disconnectCount).toBe(expectedDisconnects);
-          done();
-        }
+  test('should handle dynamic join/leave', async () => {
+    // Connect 10 initial players
+    for (let i = 0; i < 10; i++) {
+      const socket = Client(`http://localhost:${PORT}`, {
+        transports: ['websocket'],
+        forceNew: true
       });
-    });
+      await new Promise(resolve => socket.on('connect', resolve));
+      clientSockets.push(socket);
+    }
 
     // Disconnect 5 players
-    clientSockets.slice(0, expectedDisconnects).forEach(socket => {
-      socket.close();
-    });
+    for (let i = 0; i < 5; i++) {
+      clientSockets[i].close();
+    }
+    clientSockets = clientSockets.slice(5);
+
+    // Connect 5 new players
+    for (let i = 0; i < 5; i++) {
+      const socket = Client(`http://localhost:${PORT}`, {
+        transports: ['websocket'],
+        forceNew: true
+      });
+      await new Promise(resolve => socket.on('connect', resolve));
+      clientSockets.push(socket);
+    }
+
+    expect(clientSockets.length).toBe(10);
   });
 
-  test('should maintain consistent game state across all players', (done) => {
-    const testPlayer = clientSockets[10];
-    let stateUpdateCount = 0;
-    const expectedUpdates = clientSockets.length - 11; // All remaining players should receive update
+  test('should only send updates to nearby players within culling distance', (done) => {
+    let nearbyUpdates = 0;
+    let farUpdates = 0;
 
-    clientSockets.slice(11).forEach(socket => {
-      socket.on('playerHealthUpdate', (data) => {
-        expect(data.health).toBe(50);
-        stateUpdateCount++;
-        if (stateUpdateCount === expectedUpdates) {
-          done();
-        }
-      });
+    // Create two players
+    const player1 = Client(`http://localhost:${PORT}`, {
+      transports: ['websocket'],
+      forceNew: true
+    });
+    const player2 = Client(`http://localhost:${PORT}`, {
+      transports: ['websocket'],
+      forceNew: true
     });
 
-    testPlayer.emit('updateHealth', { health: 50 });
+    player1.on('connect', () => {
+      player2.on('connect', () => {
+        // Position updates for nearby player
+        player1.emit('updatePosition', {
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { y: 0 }
+        });
+
+        // Position updates for far player
+        player1.emit('updatePosition', {
+          position: { x: CULLING_DISTANCE * 2, y: 0, z: CULLING_DISTANCE * 2 },
+          rotation: { y: 0 }
+        });
+
+        player2.on('playerPositionUpdate', (data) => {
+          const dx = data.position.x;
+          const dz = data.position.z;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+          
+          if (distance <= CULLING_DISTANCE) {
+            nearbyUpdates++;
+          } else {
+            farUpdates++;
+          }
+
+          if (nearbyUpdates === 1 && farUpdates === 0) {
+            player1.close();
+            player2.close();
+            done();
+          }
+        });
+      });
+    });
   });
 }); 

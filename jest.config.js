@@ -11,4 +11,4 @@ const config = {
     setupFiles: ['<rootDir>/tests/setup.js']
 };
 
-module.exports = config; 
+export default config; 

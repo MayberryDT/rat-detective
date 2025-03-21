@@ -5,9 +5,12 @@ export class CollisionSystem {
   constructor(map) {
     this.map = map;
     this.raycaster = new Raycaster();
-    this.collisionDistance = 0.2; // For player movement
-    this.projectileCollisionDistance = 0.1; // More precise for projectiles
+    this.collisionDistance = 1.0; // Increased from 0.2 to 1.0 for better detection
+    this.projectileCollisionDistance = 0.1;
     this.isGrounded = false;
+    
+    // Initialize debug mode
+    this.debugMode = true;  // Set to true to enable detailed logging
     
     console.log('Collision system initialized - DEBUG VERSION 23');
     
@@ -25,12 +28,23 @@ export class CollisionSystem {
     };
   }
 
+  debugLog(message, data = {}) {
+    if (this.debugMode) {
+      console.log(`[Collision Debug] ${message}`, data);
+    }
+  }
+
   checkCollision(position, movement) {
     const result = {
       hasCollision: false,
       adjustedMovement: movement.clone(),
       isGrounded: false
     };
+
+    this.debugLog('Starting collision check', {
+      position: position.clone(),
+      movement: movement.clone()
+    });
 
     // Add debouncing for collision stats to prevent rapid updates
     const now = Date.now();
@@ -41,7 +55,34 @@ export class CollisionSystem {
       this.stats.lastUpdateTime = now;
     }
 
-    // First check for ceiling collisions (jumping into objects from below)
+    // Check wall collisions FIRST and return early if there's a collision
+    const wallCollision = this.checkWallCollisions(position, movement);
+    if (wallCollision.hasCollision) {
+      result.hasCollision = true;
+      result.adjustedMovement.copy(wallCollision.adjustedMovement);
+      
+      this.debugLog('Wall collision detected', {
+        originalMovement: movement.clone(),
+        adjustedMovement: result.adjustedMovement.clone(),
+        collisionNormal: wallCollision.collisionNormal,
+        isPipeCollision: wallCollision.isPipeCollision
+      });
+      
+      if (shouldUpdateStats) {
+        if (wallCollision.isPipeCollision) {
+          this.stats.pipeCollisions++;
+        } else {
+          this.stats.wallCollisions++;
+        }
+        this.stats.totalCollisions++;
+      }
+      
+      return result;  // Return immediately after wall collision
+    }
+
+    // Only check ceiling and floor if no wall collision
+
+    // Check for ceiling collisions
     const ceilingCollision = this.checkCeilingCollisions(position, movement);
     if (ceilingCollision.hasCollision) {
       result.hasCollision = true;
@@ -52,7 +93,7 @@ export class CollisionSystem {
       }
     }
 
-    // Check floor collisions next
+    // Check floor collisions last
     const floorCollision = this.checkFloorCollisions(position, movement);
     if (floorCollision.hasCollision) {
       result.hasCollision = true;
@@ -61,22 +102,6 @@ export class CollisionSystem {
       
       if (shouldUpdateStats) {
         this.stats.floorCollisions++;
-      }
-    }
-
-    // Then check wall collisions
-    const wallCollision = this.checkWallCollisions(position, movement);
-    if (wallCollision.hasCollision) {
-      result.hasCollision = true;
-      result.adjustedMovement.x = wallCollision.adjustedMovement.x;
-      result.adjustedMovement.z = wallCollision.adjustedMovement.z;
-      
-      if (shouldUpdateStats) {
-        if (wallCollision.isPipeCollision) {
-          this.stats.pipeCollisions++;
-        } else {
-          this.stats.wallCollisions++;
-        }
       }
     }
 
@@ -156,10 +181,11 @@ export class CollisionSystem {
       collisionNormal: null
     };
 
-    // Skip if no horizontal movement
-    if (Math.abs(movement.x) < 0.001 && Math.abs(movement.z) < 0.001) {
-      return result;
-    }
+    this.debugLog('Checking wall collisions', {
+      position: position.clone(),
+      movement: movement.clone(),
+      collisionDistance: this.collisionDistance
+    });
 
     // Get potential wall objects with a simpler filter
     const collisionObjects = this.map.getAllCollisionObjects().filter(obj => {
@@ -170,33 +196,36 @@ export class CollisionSystem {
       );
     });
 
-    // Cast rays at multiple heights and angles for better collision detection
+    this.debugLog('Found wall objects', {
+      count: collisionObjects.length
+    });
+
+    // Cast rays at multiple heights
     const rayHeights = [0.3, 0.9, 1.5]; // Lower, middle, and upper body
-    const rayAngles = [-0.2, 0, 0.2]; // Check slightly to the sides as well
     
-    // Direction of movement
-    const direction = movement.clone().normalize();
-    
-    // Calculate perpendicular vector for angle checks
-    const perpendicular = new Vector3(-direction.z, 0, direction.x);
+    // Cast rays in multiple directions to catch walls we might be inside of
+    const rayDirections = [
+      movement.clone().normalize(), // Movement direction
+      new Vector3(1, 0, 0),  // Right
+      new Vector3(-1, 0, 0), // Left
+      new Vector3(0, 0, 1),  // Forward
+      new Vector3(0, 0, -1), // Back
+      new Vector3(1, 0, 1).normalize(),  // Forward-Right
+      new Vector3(-1, 0, 1).normalize(), // Forward-Left
+      new Vector3(1, 0, -1).normalize(), // Back-Right
+      new Vector3(-1, 0, -1).normalize() // Back-Left
+    ];
 
     let closestHit = null;
     let minDistance = Infinity;
 
     for (const height of rayHeights) {
-      for (const angle of rayAngles) {
-        // Calculate ray direction with slight angle offset
-        const rayDir = direction.clone();
-        if (angle !== 0) {
-          rayDir.add(perpendicular.clone().multiplyScalar(angle));
-          rayDir.normalize();
-        }
-        
+      for (const direction of rayDirections) {
         const rayStart = position.clone().add(new Vector3(0, height, 0));
-        this.raycaster.set(rayStart, rayDir);
-
+        this.raycaster.set(rayStart, direction);
+        
         const intersects = this.raycaster.intersectObjects(collisionObjects, false);
-
+        
         if (intersects.length > 0) {
           const hit = intersects[0];
           
@@ -209,6 +238,14 @@ export class CollisionSystem {
           if (hit.distance < minDistance && hit.distance < this.collisionDistance) {
             minDistance = hit.distance;
             closestHit = hit;
+            
+            this.debugLog('Found potential collision', {
+              height,
+              direction: direction.clone(),
+              distance: hit.distance,
+              objectName: hit.object.name,
+              objectType: hit.object.userData?.colliderType
+            });
           }
         }
       }
@@ -219,22 +256,38 @@ export class CollisionSystem {
       result.isPipeCollision = closestHit.object.userData?.isPipeSide || 
                               closestHit.object.name?.includes('pipe');
       
-      // Get the collision normal
+      // Get the collision normal and ensure it's properly oriented in world space
       const normal = closestHit.face.normal.clone();
-      // Transform the normal from local space to world space
       normal.transformDirection(closestHit.object.matrixWorld);
       result.collisionNormal = normal;
       
-      // Calculate sliding movement
+      this.debugLog('Processing collision response', {
+        collisionNormal: normal.clone(),
+        distance: minDistance,
+        objectName: closestHit.object.name
+      });
+      
+      // Calculate the pushback direction (away from wall)
+      const pushbackDistance = this.collisionDistance - minDistance;
+      const pushback = normal.multiplyScalar(pushbackDistance);
+      
+      // First push back from wall
+      result.adjustedMovement.add(pushback);
+      
+      // Then calculate sliding
       const dot = movement.dot(normal);
-      const slide = movement.clone().sub(normal.multiplyScalar(dot));
-      
-      // Apply sliding movement with a small reduction in speed
-      result.adjustedMovement.copy(slide.multiplyScalar(0.8));
-      
-      // Ensure we're not moving into the wall
-      if (result.adjustedMovement.dot(movement) < 0) {
-        result.adjustedMovement.set(0, 0, 0);
+      if (dot < 0) {
+        const slide = movement.clone().sub(normal.multiplyScalar(dot));
+        const friction = 0.8;
+        
+        // Apply sliding while maintaining pushback
+        result.adjustedMovement.add(slide.multiplyScalar(friction));
+        
+        this.debugLog('Calculated response', {
+          pushback: pushback.clone(),
+          slide: slide.clone(),
+          finalAdjustedMovement: result.adjustedMovement.clone()
+        });
       }
     }
 

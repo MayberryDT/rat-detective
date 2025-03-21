@@ -37,19 +37,6 @@ export function initMultiplayer(scene, localRat) {
   socket.on('spawnPoint', (spawnPoint) => {
     localRat.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
   });
-
-  // Handle position corrections from server
-  socket.on('positionCorrection', (data) => {
-    // Smoothly interpolate to the corrected position
-    const targetPosition = new THREE.Vector3(
-      data.position.x,
-      data.position.y,
-      data.position.z
-    );
-    
-    // Use lerp for smooth movement
-    localRat.position.lerp(targetPosition, 0.5);
-  });
   
   // Handle socket connection
   socket.on('connect', () => {
@@ -115,13 +102,8 @@ export function initMultiplayer(scene, localRat) {
         scene.add(ratGroup);
         players.set(data.id, ratGroup);
       } else {
-        // Update existing rat model with smooth interpolation
-        const targetPosition = new THREE.Vector3(
-          data.position.x,
-          data.position.y,
-          data.position.z
-        );
-        remoteRat.position.lerp(targetPosition, 0.5);
+        // Update existing rat model
+        remoteRat.position.copy(data.position);
         if (data.rotation) remoteRat.rotation.y = data.rotation.y;
       }
     } else {
