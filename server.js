@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import * as THREE from 'three';
 import { ServerCollisionSystem } from './src/server/collision.js';
 import { createMap } from './src/map.js';
 
