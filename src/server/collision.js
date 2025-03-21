@@ -1,116 +1,77 @@
 const THREE = require('three');
 
 class ServerCollisionSystem {
-  constructor(map) {
-    this.map = map;
+  constructor() {
+    this.collisionDistance = 2.0; // Increased from 1.0 for better collision detection
+    this.playerRadius = 1.0; // Player's collision radius
+    this.rayDirections = [
+      new THREE.Vector3(1, 0, 0),   // Right
+      new THREE.Vector3(-1, 0, 0),  // Left
+      new THREE.Vector3(0, 0, 1),   // Forward
+      new THREE.Vector3(0, 0, -1),  // Backward
+      new THREE.Vector3(1, 0, 1).normalize(),   // Diagonal right-forward
+      new THREE.Vector3(-1, 0, 1).normalize(),  // Diagonal left-forward
+      new THREE.Vector3(1, 0, -1).normalize(),  // Diagonal right-backward
+      new THREE.Vector3(-1, 0, -1).normalize()  // Diagonal left-backward
+    ];
     this.raycaster = new THREE.Raycaster();
-    this.collisionDistance = 1.0; // Match client-side collision distance
+    this.safetyMargin = 0.5; // Added safety margin to prevent wall clipping
+  }
+
+  init() {
     console.log('ServerCollisionSystem initialized with collision distance:', this.collisionDistance);
   }
 
-  validatePosition(position, movement) {
-    const result = {
-      isValid: true,
-      adjustedPosition: position.clone(),
-      reason: null
-    };
+  validatePosition(position, collisionObjects) {
+    const adjustedPosition = position.clone();
+    let collisionDetected = false;
 
-    // Skip validation if no movement
-    if (movement.length() < 0.001) {
-      return result;
-    }
+    // Check collision in all directions
+    for (const direction of this.rayDirections) {
+      this.raycaster.set(position, direction);
+      const intersects = this.raycaster.intersectObjects(collisionObjects, true);
 
-    // Get potential wall objects
-    const collisionObjects = this.map.getAllCollisionObjects().filter(obj => {
-      const isCollider = (
-        obj.userData?.isPipeSide === true || 
-        obj.userData?.colliderType === 'wall' ||
-        obj.name?.includes('wall') ||
-        obj.name?.includes('pipe')
-      );
-      if (isCollider) {
-        console.log('Found collision object:', obj.name, obj.userData);
-      }
-      return isCollider;
-    });
-
-    console.log('Found collision objects:', collisionObjects.length);
-    if (collisionObjects.length === 0) {
-      console.warn('No collision objects found! This might be why walls are not working.');
-    }
-
-    // Cast rays at multiple heights
-    const rayHeights = [0.3, 0.9, 1.5]; // Lower, middle, and upper body
-    
-    // Cast rays in multiple directions to catch walls we might be inside of
-    const rayDirections = [
-      movement.clone().normalize(), // Movement direction
-      new THREE.Vector3(1, 0, 0),  // Right
-      new THREE.Vector3(-1, 0, 0), // Left
-      new THREE.Vector3(0, 0, 1),  // Forward
-      new THREE.Vector3(0, 0, -1), // Back
-      new THREE.Vector3(1, 0, 1).normalize(),  // Forward-Right
-      new THREE.Vector3(-1, 0, 1).normalize(), // Forward-Left
-      new THREE.Vector3(1, 0, -1).normalize(), // Back-Right
-      new THREE.Vector3(-1, 0, -1).normalize() // Back-Left
-    ];
-
-    let closestHit = null;
-    let minDistance = Infinity;
-
-    for (const height of rayHeights) {
-      for (const direction of rayDirections) {
-        const rayStart = position.clone().add(new THREE.Vector3(0, height, 0));
-        this.raycaster.set(rayStart, direction);
-        
-        const intersects = this.raycaster.intersectObjects(collisionObjects, false);
-        
-        if (intersects.length > 0) {
-          const hit = intersects[0];
-          
-          // Skip end caps
-          if (hit.object.userData?.isEndCap) {
-            continue;
-          }
-          
-          // Check if this is the closest hit
-          if (hit.distance < minDistance && hit.distance < this.collisionDistance) {
-            minDistance = hit.distance;
-            closestHit = hit;
-            console.log('Found closer hit:', {
-              distance: hit.distance,
-              object: hit.object.name,
-              point: hit.point
-            });
-          }
+      if (intersects.length > 0) {
+        const distance = intersects[0].distance;
+        if (distance < this.collisionDistance + this.playerRadius) {
+          collisionDetected = true;
+          // Calculate the push-back vector
+          const pushBack = direction.clone()
+            .multiplyScalar(this.collisionDistance + this.playerRadius + this.safetyMargin - distance);
+          adjustedPosition.add(pushBack);
         }
       }
     }
 
-    if (closestHit) {
-      result.isValid = false;
-      result.reason = 'wall_collision';
-      
-      // Get the collision normal
-      const normal = closestHit.face.normal.clone();
-      normal.transformDirection(closestHit.object.matrixWorld);
-      
-      // Calculate the pushback direction (away from wall)
-      const pushbackDistance = this.collisionDistance - minDistance;
-      const pushback = normal.multiplyScalar(pushbackDistance);
-      
-      // Adjust position to prevent wall clipping
-      result.adjustedPosition.add(pushback);
-      
-      console.log('Wall collision detected:', {
-        originalPosition: position,
-        adjustedPosition: result.adjustedPosition,
-        pushback: pushback,
-        normal: normal
-      });
+    return {
+      isValid: !collisionDetected,
+      adjustedPosition
+    };
+  }
+
+  detectWallCollision(position, direction, collisionObjects) {
+    this.raycaster.set(position, direction);
+    const intersects = this.raycaster.intersectObjects(collisionObjects, true);
+
+    if (intersects.length > 0) {
+      const distance = intersects[0].distance;
+      return distance < this.collisionDistance + this.playerRadius;
     }
 
-    return result;
+    return false;
+  }
+
+  getCollisionObjects(scene) {
+    const collisionObjects = [];
+    
+    // Traverse the scene to find all objects with collision flags
+    scene.traverse((object) => {
+      if (object.userData && object.userData.isCollider) {
+        collisionObjects.push(object);
+      }
+    });
+
+    return collisionObjects;
   }
 }
 
