@@ -1,13 +1,15 @@
-module.exports = {
+/** @type {import('@babel/core').TransformOptions} */
+const config = {
     presets: [
         ['@babel/preset-env', {
             targets: {
                 node: 'current'
-            },
-            modules: 'commonjs'
+            }
         }]
     ],
     plugins: [
         '@babel/plugin-syntax-import-meta'
     ]
-}; 
+};
+
+module.exports = config; 

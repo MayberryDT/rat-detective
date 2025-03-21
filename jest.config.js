@@ -1,9 +1,14 @@
-module.exports = {
-    testEnvironment: 'jsdom',
+/** @type {import('jest').Config} */
+const config = {
+    testEnvironment: 'node',
     transform: {
-        '^.+\\.jsx?$': 'babel-jest',
+        '^.+\\.jsx?$': 'babel-jest'
     },
-    transformIgnorePatterns: [
-        '/node_modules/(?!three|@three).+\\.js$'
-    ],
-}; 
+    moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1'
+    },
+    testMatch: ['**/__tests__/**/*.[jt]s?(x)', '**/?(*.)+(spec|test).[jt]s?(x)'],
+    setupFiles: ['<rootDir>/tests/setup.js']
+};
+
+module.exports = config; 
