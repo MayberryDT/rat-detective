@@ -19,7 +19,7 @@ class ServerMap {
     this.createWalls();
     this.walls.forEach(wall => this.mapGroup.add(wall));
 
-    // Create buildings
+    // Create buildings and sewer environment
     this.createBuildings();
     this.buildings.forEach(building => this.mapGroup.add(building));
 
@@ -33,7 +33,6 @@ class ServerMap {
     floor.position.y = -0.5;
     floor.name = 'floor';
     floor.userData = {
-      isPipeFloor: false,
       isCollider: true,
       colliderType: 'floor'
     };
@@ -99,60 +98,103 @@ class ServerMap {
   }
 
   createBuildings() {
-    // Create some buildings for cover
     const buildingMaterial = new MeshPhongMaterial({ color: 0x404040 });
     
-    // Building 1
-    const building1 = new Mesh(
-      new BoxGeometry(20, 15, 20),
-      buildingMaterial
-    );
-    building1.position.set(30, 7, 30);
-    building1.name = 'building1';
-    building1.userData = {
-      isCollider: true,
-      colliderType: 'building'
-    };
-    this.buildings.push(building1);
+    // Central buildings
+    const centralBuildings = [
+      { size: [30, 20, 30], pos: [0, 10, 0], name: 'centralTower' },
+      { size: [20, 15, 20], pos: [0, 7, 20], name: 'northTower' },
+      { size: [20, 15, 20], pos: [0, 7, -20], name: 'southTower' },
+      { size: [20, 15, 20], pos: [20, 7, 0], name: 'eastTower' },
+      { size: [20, 15, 20], pos: [-20, 7, 0], name: 'westTower' }
+    ];
 
-    // Building 2
-    const building2 = new Mesh(
-      new BoxGeometry(20, 15, 20),
-      buildingMaterial
-    );
-    building2.position.set(-30, 7, -30);
-    building2.name = 'building2';
-    building2.userData = {
-      isCollider: true,
-      colliderType: 'building'
-    };
-    this.buildings.push(building2);
+    // Corner buildings
+    const cornerBuildings = [
+      { size: [15, 12, 15], pos: [40, 6, 40], name: 'northEastCorner' },
+      { size: [15, 12, 15], pos: [-40, 6, 40], name: 'northWestCorner' },
+      { size: [15, 12, 15], pos: [40, 6, -40], name: 'southEastCorner' },
+      { size: [15, 12, 15], pos: [-40, 6, -40], name: 'southWestCorner' }
+    ];
 
-    // Building 3
-    const building3 = new Mesh(
-      new BoxGeometry(20, 15, 20),
-      buildingMaterial
-    );
-    building3.position.set(30, 7, -30);
-    building3.name = 'building3';
-    building3.userData = {
-      isCollider: true,
-      colliderType: 'building'
-    };
-    this.buildings.push(building3);
+    // Mid-side buildings
+    const midSideBuildings = [
+      { size: [15, 10, 15], pos: [0, 5, 40], name: 'northMid' },
+      { size: [15, 10, 15], pos: [0, 5, -40], name: 'southMid' },
+      { size: [15, 10, 15], pos: [40, 5, 0], name: 'eastMid' },
+      { size: [15, 10, 15], pos: [-40, 5, 0], name: 'westMid' }
+    ];
 
-    // Building 4
-    const building4 = new Mesh(
-      new BoxGeometry(20, 15, 20),
-      buildingMaterial
-    );
-    building4.position.set(-30, 7, 30);
-    building4.name = 'building4';
-    building4.userData = {
-      isCollider: true,
-      colliderType: 'building'
-    };
-    this.buildings.push(building4);
+    // Create all buildings
+    [...centralBuildings, ...cornerBuildings, ...midSideBuildings].forEach(building => {
+      const mesh = new Mesh(
+        new BoxGeometry(...building.size),
+        buildingMaterial
+      );
+      mesh.position.set(...building.pos);
+      mesh.name = building.name;
+      mesh.userData = {
+        isCollider: true,
+        colliderType: 'building'
+      };
+      this.buildings.push(mesh);
+    });
+
+    // Add sewer pipes and tunnels
+    const pipeMaterial = new MeshPhongMaterial({ color: 0x808080 });
+    
+    // Horizontal pipes
+    for (let x = -80; x <= 80; x += 40) {
+      const pipe = new Mesh(
+        new BoxGeometry(100, 2, 2),
+        pipeMaterial
+      );
+      pipe.position.set(x, 1, 0);
+      pipe.name = `horizontalPipe_${x}`;
+      pipe.userData = {
+        isCollider: true,
+        colliderType: 'pipe'
+      };
+      this.buildings.push(pipe);
+    }
+
+    // Vertical pipes
+    for (let z = -80; z <= 80; z += 40) {
+      const pipe = new Mesh(
+        new BoxGeometry(2, 2, 100),
+        pipeMaterial
+      );
+      pipe.position.set(0, 1, z);
+      pipe.name = `verticalPipe_${z}`;
+      pipe.userData = {
+        isCollider: true,
+        colliderType: 'pipe'
+      };
+      this.buildings.push(pipe);
+    }
+
+    // Add some smaller obstacles and cover
+    const obstacleMaterial = new MeshPhongMaterial({ color: 0x606060 });
+    const obstacles = [
+      { size: [5, 3, 5], pos: [10, 1.5, 10], name: 'obstacle1' },
+      { size: [5, 3, 5], pos: [-10, 1.5, 10], name: 'obstacle2' },
+      { size: [5, 3, 5], pos: [10, 1.5, -10], name: 'obstacle3' },
+      { size: [5, 3, 5], pos: [-10, 1.5, -10], name: 'obstacle4' }
+    ];
+
+    obstacles.forEach(obstacle => {
+      const mesh = new Mesh(
+        new BoxGeometry(...obstacle.size),
+        obstacleMaterial
+      );
+      mesh.position.set(...obstacle.pos);
+      mesh.name = obstacle.name;
+      mesh.userData = {
+        isCollider: true,
+        colliderType: 'obstacle'
+      };
+      this.buildings.push(mesh);
+    });
   }
 
   getAllCollisionObjects() {
