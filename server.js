@@ -1,84 +1,32 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { WebSocketServer } from 'ws';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { ServerCollisionSystem } from './src/server/collision.js';
+import { createMap } from './src/map.js';
 
 const app = express();
-const server = createServer(app);
-const io = new Server(server, {
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' 
-      ? process.env.CORS_ORIGIN 
-      : '*',
+    origin: process.env.NODE_ENV === 'production' ? false : 'http://localhost:5173',
     methods: ['GET', 'POST']
-  },
-  wsEngine: WebSocketServer
+  }
 });
 
-// Serve static files from the dist directory for production
-// In development, Vite will handle static files
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(join(__dirname, 'dist')));
-  
-  app.get('*', (req, res) => {
-    res.sendFile(join(__dirname, 'dist', 'index.html'));
-  });
-}
+// Constants
+const MAX_PLAYERS = 20;
+const CULLING_DISTANCE = 100;
+const POSITION_UPDATE_INTERVAL = 50; // 20 updates per second
 
-// Constants for game configuration
-const MAX_PLAYERS = 50;
-const MAP_SIZE = 1000; // Size of the map in units
-const SPAWN_POINTS = generateSpawnPoints();
-const CULLING_DISTANCE = 100; // Distance at which to cull distant players
-
-// Generate spawn points around the map
-function generateSpawnPoints() {
-  const points = [];
-  const numPoints = MAX_PLAYERS * 2; // Generate extra spawn points for flexibility
-  
-  for (let i = 0; i < numPoints; i++) {
-    points.push({
-      x: (Math.random() - 0.5) * MAP_SIZE,
-      y: 0, // Ground level
-      z: (Math.random() - 0.5) * MAP_SIZE
-    });
-  }
-  return points;
-}
-
-// Find safe spawn point (away from other players)
-function findSafeSpawnPoint(activePlayers) {
-  const safeDistance = 20; // Minimum distance from other players
-  
-  for (const point of SPAWN_POINTS) {
-    let isSafe = true;
-    for (const [_, player] of activePlayers) {
-      const dx = point.x - player.position.x;
-      const dz = point.z - player.position.z;
-      const distance = Math.sqrt(dx * dx + dz * dz);
-      
-      if (distance < safeDistance) {
-        isSafe = false;
-        break;
-      }
-    }
-    if (isSafe) return point;
-  }
-  
-  // If no safe point found, return a random spawn point
-  return SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
-}
+// Create the game map and collision system
+const map = createMap();
+const collisionSystem = new ServerCollisionSystem(map);
 
 // Active players map to store connected players
 const activePlayers = new Map();
 
 // Setup WebSocket server
-function setupWebSocketServer(io) {
+export function setupWebSocketServer(io) {
   io.on('connection', (socket) => {
     // Check if server is full
     if (activePlayers.size >= MAX_PLAYERS) {
@@ -96,7 +44,8 @@ function setupWebSocketServer(io) {
       health: 100,
       position: spawnPoint,
       rotation: { y: 0 },
-      lastUpdate: Date.now()
+      lastUpdate: Date.now(),
+      lastPosition: spawnPoint // Store last valid position
     });
     
     // Send spawn point to new player
@@ -126,26 +75,48 @@ function setupWebSocketServer(io) {
       }
     });
     
-    // Handle position updates with culling
+    // Handle position updates with culling and collision validation
     socket.on('updatePosition', (data) => {
       const player = activePlayers.get(socket.id);
       if (player) {
-        player.position = data.position;
+        // Calculate movement from last position
+        const movement = new THREE.Vector3(
+          data.position.x - player.lastPosition.x,
+          data.position.y - player.lastPosition.y,
+          data.position.z - player.lastPosition.z
+        );
+
+        // Validate the new position
+        const validation = collisionSystem.validatePosition(data.position, movement);
+        
+        if (!validation.isValid) {
+          // If position is invalid, use the adjusted position
+          player.position = validation.adjustedPosition;
+          // Send the corrected position back to the client
+          socket.emit('positionCorrection', {
+            position: validation.adjustedPosition
+          });
+        } else {
+          // Position is valid, update it
+          player.position = data.position;
+        }
+
         player.rotation = data.rotation;
         player.lastUpdate = Date.now();
+        player.lastPosition = player.position.clone();
         
         // Only broadcast to nearby players
         activePlayers.forEach((otherPlayer, otherId) => {
           if (otherId !== socket.id) {
-            const dx = data.position.x - otherPlayer.position.x;
-            const dz = data.position.z - otherPlayer.position.z;
+            const dx = player.position.x - otherPlayer.position.x;
+            const dz = player.position.z - otherPlayer.position.z;
             const distance = Math.sqrt(dx * dx + dz * dz);
             
             if (distance <= CULLING_DISTANCE) {
               io.to(otherId).emit('playerPositionUpdate', {
                 id: socket.id,
-                position: data.position,
-                rotation: data.rotation
+                position: player.position,
+                rotation: player.rotation
               });
             }
           }
@@ -240,14 +211,40 @@ function setupWebSocketServer(io) {
   }, 30000);
 }
 
-// Apply WebSocket setup
-setupWebSocketServer(io);
+// Helper function to find a safe spawn point
+function findSafeSpawnPoint(activePlayers) {
+  // Simple spawn point selection - can be improved with actual map data
+  const spawnPoints = [
+    { x: 0, y: 1, z: 0 },
+    { x: 5, y: 1, z: 5 },
+    { x: -5, y: 1, z: -5 },
+    { x: 5, y: 1, z: -5 },
+    { x: -5, y: 1, z: 5 }
+  ];
+  
+  // Find the spawn point furthest from other players
+  let bestPoint = spawnPoints[0];
+  let maxDistance = 0;
+  
+  activePlayers.forEach(player => {
+    spawnPoints.forEach(point => {
+      const dx = point.x - player.position.x;
+      const dz = point.z - player.position.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        bestPoint = point;
+      }
+    });
+  });
+  
+  return bestPoint;
+}
 
-// Start server
+// Start the server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+setupWebSocketServer(io);
+httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-});
-
-// Export for testing
-export { setupWebSocketServer }; 
+}); 
