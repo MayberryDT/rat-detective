@@ -19,8 +19,12 @@ const MAX_PLAYERS = 20;
 const CULLING_DISTANCE = 100;
 const POSITION_UPDATE_INTERVAL = 50; // 20 updates per second
 
+// Create a dummy scene for the map
+const scene = new THREE.Scene();
+
 // Create the game map and collision system
 const map = createMap();
+map.init(scene); // Initialize the map with the scene
 const collisionSystem = new ServerCollisionSystem(map);
 
 // Active players map to store connected players
