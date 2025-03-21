@@ -67,7 +67,7 @@
 ## Phase 7: Full Multiplayer Scaling (3–4 Hours)
 - **Objective:** Scale multiplayer to 1–50 players, with dynamic join/leave.
 - **Tasks (AI Prompts in Cursor):**
-  1. Enhance the WebSocket server to handle 1–50 players, with dynamic join/leave mechanics (random safe spawns, silent removal on leave).
+  1. Enhance the WebSocket server to handle 1–20 players, with dynamic join/leave mechanics (random safe spawns, silent removal on leave).
      - Prompt: "Update the Node.js/Express socket.io server to handle 1–50 players with dynamic join/leave, spawning new players at safe locations and removing leavers silently."
   2. Update the frontend to handle 1–50 players, ensuring performance and visibility (e.g., mini-map updates, player culling for distant rats).
      - Prompt: "Modify the ThreeJS frontend to handle 1–50 players via WebSocket, with a mini-map showing player dots and culling distant rats for performance."
