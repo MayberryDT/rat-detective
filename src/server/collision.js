@@ -1,6 +1,6 @@
-import * as THREE from 'three';
+const THREE = require('three');
 
-export class ServerCollisionSystem {
+class ServerCollisionSystem {
   constructor(map) {
     this.map = map;
     this.raycaster = new THREE.Raycaster();
@@ -112,4 +112,6 @@ export class ServerCollisionSystem {
 
     return result;
   }
-} 
+}
+
+module.exports = { ServerCollisionSystem }; 

@@ -1,9 +1,9 @@
-import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import * as THREE from 'three';
-import { ServerCollisionSystem } from './src/server/collision.js';
-import { createMap } from './src/map.js';
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const THREE = require('three');
+const { ServerCollisionSystem } = require('./src/server/collision.js');
+const { createMap } = require('./src/map.js');
 
 const app = express();
 const httpServer = createServer(app);
@@ -27,7 +27,7 @@ const collisionSystem = new ServerCollisionSystem(map);
 const activePlayers = new Map();
 
 // Setup WebSocket server
-export function setupWebSocketServer(io) {
+function setupWebSocketServer(io) {
   io.on('connection', (socket) => {
     // Check if server is full
     if (activePlayers.size >= MAX_PLAYERS) {
