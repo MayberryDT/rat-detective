@@ -5,6 +5,7 @@ export class ServerCollisionSystem {
     this.map = map;
     this.raycaster = new THREE.Raycaster();
     this.collisionDistance = 1.0; // Match client-side collision distance
+    console.log('ServerCollisionSystem initialized with collision distance:', this.collisionDistance);
   }
 
   validatePosition(position, movement) {
@@ -21,13 +22,22 @@ export class ServerCollisionSystem {
 
     // Get potential wall objects
     const collisionObjects = this.map.getAllCollisionObjects().filter(obj => {
-      return (
+      const isCollider = (
         obj.userData?.isPipeSide === true || 
         obj.userData?.colliderType === 'wall' ||
         obj.name?.includes('wall') ||
         obj.name?.includes('pipe')
       );
+      if (isCollider) {
+        console.log('Found collision object:', obj.name, obj.userData);
+      }
+      return isCollider;
     });
+
+    console.log('Found collision objects:', collisionObjects.length);
+    if (collisionObjects.length === 0) {
+      console.warn('No collision objects found! This might be why walls are not working.');
+    }
 
     // Cast rays at multiple heights
     const rayHeights = [0.3, 0.9, 1.5]; // Lower, middle, and upper body
@@ -67,6 +77,11 @@ export class ServerCollisionSystem {
           if (hit.distance < minDistance && hit.distance < this.collisionDistance) {
             minDistance = hit.distance;
             closestHit = hit;
+            console.log('Found closer hit:', {
+              distance: hit.distance,
+              object: hit.object.name,
+              point: hit.point
+            });
           }
         }
       }
@@ -86,6 +101,13 @@ export class ServerCollisionSystem {
       
       // Adjust position to prevent wall clipping
       result.adjustedPosition.add(pushback);
+      
+      console.log('Wall collision detected:', {
+        originalPosition: position,
+        adjustedPosition: result.adjustedPosition,
+        pushback: pushback,
+        normal: normal
+      });
     }
 
     return result;

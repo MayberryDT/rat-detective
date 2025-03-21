@@ -86,6 +86,13 @@ export function setupWebSocketServer(io) {
           data.position.z - player.lastPosition.z
         );
 
+        console.log('Position update received:', {
+          playerId: socket.id,
+          position: data.position,
+          movement: movement,
+          lastPosition: player.lastPosition
+        });
+
         // Convert position to THREE.Vector3
         const position = new THREE.Vector3(
           data.position.x,
@@ -96,12 +103,24 @@ export function setupWebSocketServer(io) {
         // Validate the new position
         const validation = collisionSystem.validatePosition(position, movement);
         
+        console.log('Position validation result:', {
+          playerId: socket.id,
+          isValid: validation.isValid,
+          reason: validation.reason,
+          originalPosition: position,
+          adjustedPosition: validation.adjustedPosition
+        });
+        
         if (!validation.isValid) {
           // If position is invalid, use the adjusted position
           player.position = validation.adjustedPosition;
           // Send the corrected position back to the client
           socket.emit('positionCorrection', {
             position: validation.adjustedPosition
+          });
+          console.log('Sent position correction to client:', {
+            playerId: socket.id,
+            correctedPosition: validation.adjustedPosition
           });
         } else {
           // Position is valid, update it
