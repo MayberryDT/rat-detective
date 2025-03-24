@@ -3,7 +3,7 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Rat Detective: GoldenEye Clone Tech Stack
+# Rat Detective: Whisker Wars Tech Stack
 
 ## Frontend
 - **Framework**: ThreeJS (for 3D game)

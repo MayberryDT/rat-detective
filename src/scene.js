@@ -6,7 +6,7 @@ import { initMouseControls, updateCamera } from './mouse-controls.js';
 import { SewerMap } from './map.js';
 import { CollisionSystem } from './collision.js';
 import { createRat } from './rat.js';
-import { createNPCs, updateNPCs, addHealthBar, handleNPCDeath, flashNPC, NPC_HITBOX_WIDTH, NPC_HITBOX_HEIGHT, NPC_HITBOX_DEPTH } from './npc.js';
+import { createNPCs, updateNPCs, addHealthBar, handleNPCDeath, flashNPC, NPC_HITBOX_WIDTH, NPC_HITBOX_HEIGHT, NPC_HITBOX_DEPTH, initNPCSystem } from './npc.js';
 import { findValidSpawnPoint } from './spawn.js';
 import { initDebug, logMapInit, logCollision, DEBUG_VERSION, debugLog, DEBUG_CATEGORIES } from './debug.js';
 import { initMultiplayer, updatePlayerHealth } from './multiplayer.js';
@@ -27,6 +27,19 @@ export async function initScene() {
         
         const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 0.8);
         directionalLight.position.set(1, 1, 1);
+        
+        // Configure shadow properties
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -100;
+        directionalLight.shadow.camera.right = 100;
+        directionalLight.shadow.camera.top = 100;
+        directionalLight.shadow.camera.bottom = -100;
+        directionalLight.shadow.bias = -0.0001;
+        
         scene.add(directionalLight);
         debugLog(DEBUG_CATEGORIES.SCENE, 'Lighting setup complete');
         
@@ -40,6 +53,9 @@ export async function initScene() {
         debugLog(DEBUG_CATEGORIES.SCENE, 'Setting up collision system');
         const collisionSystem = new CollisionSystem(map);
         
+        // Initialize NPC system
+        initNPCSystem(scene, collisionSystem, map);
+        
         // Store map and collision system in scene for NPC respawning
         scene.userData.map = map;
         scene.userData.collisionSystem = collisionSystem;
@@ -48,11 +64,16 @@ export async function initScene() {
         debugLog(DEBUG_CATEGORIES.SCENE, 'Creating player');
         const result = createRat({ isNPC: false });
         const player = result.ratGroup;
+        const playerShadow = result.shadow;
         player.name = 'player-rat';
         const usedPositions = new Set();
         const spawnPoint = findValidSpawnPoint(collisionSystem, map, usedPositions);
         player.position.copy(spawnPoint);
         player.position.y = 0.1; // Start slightly above ground
+        playerShadow.position.copy(spawnPoint);
+        playerShadow.position.y = 0.01; // Keep shadow on ground
+        scene.add(player);
+        scene.add(playerShadow);
         debugLog(DEBUG_CATEGORIES.SCENE, 'Player created', { position: player.position });
         
         // Initialize player physics properties
@@ -76,7 +97,7 @@ export async function initScene() {
         
         // Create NPCs
         debugLog(DEBUG_CATEGORIES.SCENE, 'Creating NPCs');
-        const npcs = createNPCs(scene, collisionSystem, map);
+        const npcs = createNPCs(scene, collisionSystem);
         debugLog(DEBUG_CATEGORIES.SCENE, 'NPCs created', { count: npcs.length });
         
         // Create camera first
@@ -100,6 +121,25 @@ export async function initScene() {
         // Initialize combat system
         debugLog(DEBUG_CATEGORIES.SCENE, 'Initializing combat');
         initCombat(scene, player);
+        
+        // Initialize multiplayer
+        debugLog(DEBUG_CATEGORIES.SCENE, 'Initializing multiplayer');
+        try {
+            const { socket, players } = initMultiplayer(scene, player);
+            scene.userData.socket = socket;
+            scene.userData.players = players;
+            debugLog(DEBUG_CATEGORIES.SCENE, 'Multiplayer initialized successfully', {
+                socketId: socket?.id,
+                connected: socket?.connected,
+                transport: socket?.io?.engine?.transport?.name
+            });
+        } catch (error) {
+            console.error('Failed to initialize multiplayer:', error);
+            debugLog(DEBUG_CATEGORIES.SCENE, 'Multiplayer initialization failed', {
+                error: error.message,
+                stack: error.stack
+            });
+        }
         
         // Create renderer
         debugLog(DEBUG_CATEGORIES.SCENE, 'Creating renderer');
@@ -192,7 +232,33 @@ export async function initScene() {
                 }
                 
                 // Update camera
-                updateCamera(camera, player, mouseControls.verticalAngle || 0);
+                updateCamera(camera, player, mouseControls?.verticalAngle || 0);
+                
+                // Update shadow position to follow rat's x,z position but stay on ground
+                if (playerShadow) {
+                    playerShadow.position.x = player.position.x;
+                    playerShadow.position.z = player.position.z;
+                    playerShadow.position.y = 0.01; // Keep shadow on ground
+                    
+                    // Keep shadow flat while following rat's Y rotation
+                    playerShadow.rotation.x = -Math.PI / 2;
+                    playerShadow.rotation.y = player.rotation.y;
+                    playerShadow.rotation.z = 0;
+                }
+                
+                // Update multiplayer position if connected
+                if (scene.userData.socket?.connected) {
+                    scene.userData.socket.volatile.emit('updatePosition', {
+                        position: {
+                            x: player.position.x,
+                            y: player.position.y,
+                            z: player.position.z
+                        },
+                        rotation: {
+                            y: player.rotation.y
+                        }
+                    });
+                }
                 
                 // Check projectile hits
                 scene.children.forEach(projectile => {

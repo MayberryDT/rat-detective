@@ -33,6 +33,7 @@ export class SewerMap {
     const floor = new Mesh(geometry, material);
     floor.position.y = -0.5;
     floor.name = 'floor';
+    floor.receiveShadow = true;
     floor.userData = {
       isPipeFloor: false,
       isCollider: true,
@@ -106,6 +107,28 @@ export class SewerMap {
       new MeshPhongMaterial({ color: 0x606060 }), // Medium gray
       new MeshPhongMaterial({ color: 0x707070 })  // Light gray
     ];
+    
+    // Window material (darker than building for contrast)
+    const windowMaterial = new MeshPhongMaterial({ 
+      color: 0x303030,
+      shininess: 0,
+      flatShading: true,
+      side: THREE.FrontSide
+    });
+
+    // Create a single window geometry to be reused
+    const windowGeometry = new BoxGeometry(1, 1, 1); // Unit size, will be scaled
+    windowGeometry.computeVertexNormals();
+
+    // Create door geometry
+    const doorGeometry = new BoxGeometry(1, 1, 1); // Unit size, will be scaled
+    doorGeometry.computeVertexNormals();
+
+    // Temporary matrices for instance calculations
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
     
     // Define main streets layout (create a maze-like pattern)
     // These are the main streets that divide the city into blocks
@@ -230,24 +253,129 @@ export class SewerMap {
       const [width, height, depth] = buildingConfig.size;
       const { x, z } = buildingConfig.position;
       
-      // Create building as a single mesh with collision data
+      // Create building
       const building = new Mesh(
         new BoxGeometry(width, height, depth),
         material
       );
       
-      // Position the building
-      // The y position needs to be half the height so it sits on the ground
       building.position.set(x, height / 2, z);
       building.name = `building-${index}`;
-    
-      // Add collision data
+      building.castShadow = true;
+      building.receiveShadow = true;
+      
       building.userData = {
-      isCollider: true,
-        colliderType: 'wall' // Buildings act like walls for collision
+        isCollider: true,
+        colliderType: 'wall'
       };
       
       this.buildings.push(building);
+
+      // Window parameters
+      const windowWidth = Math.min(width * 0.12, 1.2);
+      const windowHeight = Math.min(height * 0.08, 1.0);
+      const windowDepth = 0.15;
+      const doorWidth = Math.min(width * 0.25, 2.0);
+      const doorHeight = Math.min(height * 0.3, 2.5);
+      const doorDepth = 0.2;
+
+      // Calculate total number of windows needed for this building
+      const sides = [
+        { axis: 'x', offset: width/2, dir: 1, rotation: -Math.PI/2 },
+        { axis: 'x', offset: -width/2, dir: -1, rotation: Math.PI/2 },
+        { axis: 'z', offset: depth/2, dir: 1, rotation: Math.PI },
+        { axis: 'z', offset: -depth/2, dir: -1, rotation: 0 }
+      ];
+
+      // Pre-calculate window count
+      let totalWindowCount = 0;
+      sides.forEach(side => {
+        const faceWidth = side.axis === 'x' ? depth : width;
+        const numWindowsHorizontal = Math.max(2, Math.floor(faceWidth / (windowWidth * 1.2)));
+        const numWindowsVertical = Math.max(3, Math.floor((height - doorHeight) / (windowHeight * 1.2)));
+        totalWindowCount += numWindowsHorizontal * numWindowsVertical;
+      });
+
+      // Create instanced mesh with exact count needed
+      const buildingWindows = new THREE.InstancedMesh(
+        windowGeometry,
+        windowMaterial,
+        totalWindowCount
+      );
+      let instanceCount = 0;
+
+      // Process each side
+      sides.forEach(side => {
+        const faceWidth = side.axis === 'x' ? depth : width;
+        const numWindowsHorizontal = Math.max(2, Math.floor(faceWidth / (windowWidth * 1.2)));
+        const spacing = Math.min(windowWidth * 1.2, (faceWidth * 0.9) / numWindowsHorizontal);
+        const startHeight = height * 0.15;
+        const numWindowsVertical = Math.max(3, Math.floor((height - doorHeight) / (windowHeight * 1.2)));
+        const verticalSpacing = ((height - doorHeight - startHeight) * 0.9) / (numWindowsVertical - 1);
+
+        // Create windows using instancing
+        for (let row = 0; row < numWindowsVertical; row++) {
+          for (let col = 0; col < numWindowsHorizontal; col++) {
+            const windowX = (col - (numWindowsHorizontal-1)/2) * spacing;
+            const windowY = startHeight + row * verticalSpacing;
+
+            // Skip if window would be where door is
+            if (side.axis === 'z' && side.offset < 0 && 
+                row === 0 && Math.abs(windowX) < doorWidth/2) {
+              continue;
+            }
+
+            // Skip if window would be outside building bounds
+            if (Math.abs(windowX) + windowWidth/2 > faceWidth/2) {
+              continue;
+            }
+
+            // Set position based on side
+            if (side.axis === 'x') {
+              position.set(
+                side.offset - (windowDepth/2 * side.dir),
+                windowY - height/2,
+                Math.max(-depth/2 + windowWidth/2, Math.min(depth/2 - windowWidth/2, windowX))
+              );
+            } else {
+              position.set(
+                Math.max(-width/2 + windowWidth/2, Math.min(width/2 - windowWidth/2, windowX)),
+                windowY - height/2,
+                side.offset - (windowDepth/2 * side.dir)
+              );
+            }
+
+            // Set rotation
+            quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), side.rotation);
+
+            // Set scale
+            scale.set(windowWidth, windowHeight, windowDepth);
+
+            // Create matrix for this instance
+            matrix.compose(position, quaternion, scale);
+
+            // Set the matrix for this instance
+            buildingWindows.setMatrixAt(instanceCount, matrix);
+            instanceCount++;
+          }
+        }
+      });
+
+      // Always add windows, with correct instance count
+      buildingWindows.count = instanceCount;
+      buildingWindows.instanceMatrix.needsUpdate = true;
+      building.add(buildingWindows);
+
+      // Add door (single mesh since there's only one per building)
+      const door = new Mesh(doorGeometry, windowMaterial);
+      door.scale.set(doorWidth, doorHeight, doorDepth);
+      door.position.set(0, -height/2 + doorHeight/2, -depth/2 + doorDepth/2);
+      building.add(door);
+
+      // Optimize the building's geometry
+      building.updateMatrix();
+      building.geometry.computeBoundingSphere();
+      building.geometry.computeBoundingBox();
     });
   }
 

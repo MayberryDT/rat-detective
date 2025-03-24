@@ -1,16 +1,16 @@
 // Last updated: 2025-03-20T00:46:17.918Z
 // Debug helper to verify that code changes are being loaded correctly
 
-const DEBUG_CATEGORIES = {
-    COMBAT: 'COMBAT',
-    MOVEMENT: 'MOVEMENT',
+export const DEBUG_CATEGORIES = {
     SCENE: 'SCENE',
-    MULTIPLAYER: 'MP',
-    COLLISION: 'COLLISION'
+    PHYSICS: 'PHYSICS',
+    NETWORK: 'NETWORK',
+    AUDIO: 'AUDIO',
+    INPUT: 'INPUT'
 };
 
 // Only log these categories
-const ENABLED_CATEGORIES = [DEBUG_CATEGORIES.COMBAT, DEBUG_CATEGORIES.SCENE];
+const ENABLED_CATEGORIES = [DEBUG_CATEGORIES.SCENE, DEBUG_CATEGORIES.PHYSICS];
 
 // Version tracking - change this number when making updates to confirm changes are applied
 export const DEBUG_VERSION = '1.0.0';
@@ -46,7 +46,7 @@ export function logMapInit(map) {
 // Log collision events
 export function logCollision(collision) {
     if (collision && collision.hasCollision) {
-        debugLog(DEBUG_CATEGORIES.COLLISION, 'Collision detected', collision);
+        debugLog(DEBUG_CATEGORIES.PHYSICS, 'Collision detected', collision);
     }
 }
 
@@ -54,6 +54,3 @@ export function logCollision(collision) {
 export function isDevMode() {
     return import.meta.env && import.meta.env.DEV === true;
 }
-
-// Export categories for use in other files
-export { DEBUG_CATEGORIES };

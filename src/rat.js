@@ -114,6 +114,20 @@ export function createRat(options = {}) {
     ratGroup.position.y = 0;
     ratGroup.name = isNPC ? 'npc-rat' : 'player-rat';
     
+    // Create shadow plane (separate from rat group)
+    const shadowGeometry = new THREE.PlaneGeometry(0.8, 0.8);
+    const shadowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.2,
+        side: THREE.DoubleSide
+    });
+    const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
+    shadow.rotation.order = 'YXZ'; // Set rotation order to match the rat
+    shadow.rotation.x = -Math.PI / 2; // Lay flat on the ground
+    shadow.position.y = 0.01; // Slightly above ground to prevent z-fighting
+    shadow.name = isNPC ? 'npc-shadow' : 'player-shadow';
+    
     // Add necessary properties
     ratGroup.velocity = new THREE.Vector3(0, 0, 0);
     ratGroup.health = 100;
@@ -126,5 +140,5 @@ export function createRat(options = {}) {
     }
     
     console.log(`Created ${isNPC ? 'NPC' : 'player'} rat model with appearance:`, appearance.id);
-    return { ratGroup };
+    return { ratGroup, shadow };
 } 

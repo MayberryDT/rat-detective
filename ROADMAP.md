@@ -1,6 +1,6 @@
 # Roadmap: Building "Rat Detective: Whisker Wars" in Cursor (Phased Development)
 
-**Goal:** Build a web-based, multiplayer FPS rat detective game with 1–50 players, persistent free-for-all rounds, and no loading screens, using 100% AI-generated code in Cursor. Each phase is small, testable, and focuses on core functionality, allowing you to verify as a user before proceeding.
+**Goal:** Build a web-based, multiplayer FPS rat detective game with 1–20 players, persistent free-for-all rounds, and no loading screens, using 100% AI-generated code in Cursor. Each phase is small, testable, and focuses on core functionality, allowing you to verify as a user before proceeding.
 
 ## Phase 1: Basic ThreeJS Scene (1–2 Hours)
 - **Objective:** Create a minimal 3D sewer environment with a single rat detective model.
@@ -25,8 +25,8 @@
 ## Phase 3: Single-Player Combat (2–3 Hours)
 - **Objective:** Add the cheese gun with basic firing mechanics.
 - **Tasks (AI Prompts in Cursor):**
-  1. Implement a cheese gun that fires rapid cheese projectiles (10 damage, short range, unlimited ammo) when clicking the mouse (desktop) or a button (mobile).
-     - Prompt: "Add a cheese gun to the rat detective in ThreeJS that fires rapid cheese projectiles (short range, 10 damage) on left-click for desktop and a button for mobile, with simple physics."
+  1. Implement a cheese gun that fires rapid cheese projectiles (25 damage, short range, unlimited ammo) when clicking the mouse (desktop) or a button (mobile).
+     - Prompt: "Add a cheese gun to the rat detective in ThreeJS that fires rapid cheese projectiles (short range, 25 damage) on left-click for desktop and a button for mobile, with simple physics."
   2. Add a basic HUD showing health (100 points) and ammo (unlimited, labeled "∞").
      - Prompt: "Create a ThreeJS or HTML/CSS HUD showing rat health (100) and ammo (∞) in the top-left corner."
 - **Testing as a User:** Fire the cheese gun, watch projectiles fly, and check the HUD updates. Verify functionality on desktop (mouse) and mobile (button).
@@ -48,7 +48,7 @@
 - **Objective:** Create a large sewer map with multiple levels and implement proper collision detection.
 - **Tasks (AI Prompts in Cursor):**
   1. Design and implement a multi-level sewer map with platforms, tunnels, and strategic points.
-     - Prompt: "Create a large ThreeJS sewer map with multiple levels, including upper walkways, lower tunnels, mid-level platforms, and strategic hiding spots like vents and pipes, optimized for 1-50 players."
+     - Prompt: "Create a large ThreeJS sewer map with multiple levels, including upper walkways, lower tunnels, mid-level platforms, and strategic hiding spots like vents and pipes, optimized for 1-20 players."
   2. Add proper collision detection for walls, floors, and platforms.
      - Prompt: "Implement collision detection in ThreeJS using raycasting for the rat detective against walls, floors, platforms, and other map elements, ensuring smooth movement and preventing clipping."
 - **Testing as a User:** Navigate the full map, verify collision with all surfaces, test platform jumping, and check for any clipping issues. Ensure smooth performance on both desktop and mobile.
@@ -65,13 +65,13 @@
 - **Output:** `server.js` for Heroku, updated `script.js` and `index.html` for WebSocket integration.
 
 ## Phase 7: Full Multiplayer Scaling (3–4 Hours)
-- **Objective:** Scale multiplayer to 1–50 players, with dynamic join/leave.
+- **Objective:** Scale multiplayer to 1–20 players, with dynamic join/leave.
 - **Tasks (AI Prompts in Cursor):**
   1. Enhance the WebSocket server to handle 1–20 players, with dynamic join/leave mechanics (random safe spawns, silent removal on leave).
-     - Prompt: "Update the Node.js/Express socket.io server to handle 1–50 players with dynamic join/leave, spawning new players at safe locations and removing leavers silently."
-  2. Update the frontend to handle 1–50 players, ensuring performance and visibility (e.g., mini-map updates, player culling for distant rats).
-     - Prompt: "Modify the ThreeJS frontend to handle 1–50 players via WebSocket, with a mini-map showing player dots and culling distant rats for performance."
-- **Testing as a User:** Test with 1, 5, 10, 25, and 50 players (using multiple devices/tabs), join/leave mid-round, and verify smooth gameplay, no lag, and accurate syncing.
+     - Prompt: "Update the Node.js/Express socket.io server to handle 1–20 players with dynamic join/leave, spawning new players at safe locations and removing leavers silently."
+  2. Update the frontend to handle 1–20 players, ensuring performance and visibility (e.g., mini-map updates, player culling for distant rats).
+     - Prompt: "Modify the ThreeJS frontend to handle 1–20 players via WebSocket, with a mini-map showing player dots and culling distant rats for performance."
+- **Testing as a User:** Test with 1, 5, 10, and 20 players (using multiple devices/tabs), join/leave mid-round, and verify smooth gameplay, no lag, and accurate syncing.
 - **Output:** Updated `server.js` and `script.js`.
 
 ## Phase 8: Additional Weapons and UI (2–3 Hours)
@@ -79,8 +79,8 @@
 - **Tasks (AI Prompts in Cursor):**
   1. Implement tail whip (20 damage, knockback, 5-second cooldown) and trap mines (15 damage, 3-second immobilize, 3 max active, 10-second cooldown).
      - Prompt: "Add a tail whip (20 damage, knockback, 5-second cooldown) and trap mines (15 damage, 3-second immobilize, 3 max, 10-second cooldown) to the rat detective in ThreeJS, synced via WebSocket."
-  2. Add a real-time leaderboard (top 5 scores) and round timer (10 minutes) to the HUD.
-     - Prompt: "Update the ThreeJS or HTML/CSS HUD to show a real-time leaderboard (top 5 scores) and a 10-minute round timer."
+  2. Add a real-time leaderboard (top 5 scores) and round timer (5 minutes) to the HUD.
+     - Prompt: "Update the ThreeJS or HTML/CSS HUD to show a real-time leaderboard (top 5 scores) and a 5-minute round timer."
 - **Testing as a User:** Use tail whip and trap mines, check their effects, and verify leaderboard/timer updates across players. Test on mobile.
 - **Output:** Updated `script.js` and `index.html`.
 
@@ -91,5 +91,5 @@
      - Prompt: "Optimize the ThreeJS game for mobile web, reducing polygon counts and ensuring <2-second load time with no loading screens."
   2. Deploy frontend to Netlify and backend to Heroku, linking with a custom domain (e.g., `ratdetective.fun`).
      - Prompt: "Write deployment scripts for hosting the ThreeJS frontend on Netlify and Node.js backend on Heroku, with HTTPS and a custom domain."
-- **Testing as a User:** Verify the game loads instantly on desktop/mobile, plays smoothly with 1–50 players, and rounds rotate correctly. Check Heroku/Netlify hosting.
+- **Testing as a User:** Verify the game loads instantly on desktop/mobile, plays smoothly with 1–20 players, and rounds rotate correctly. Check Heroku/Netlify hosting.
 - **Output:** Deployed game, final `index.html`, `script.js`, and `server.js`.

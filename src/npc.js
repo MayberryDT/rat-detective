@@ -27,6 +27,86 @@ const NPC_FIRE_RATE = 1000; // One shot per second
 // Store last fire times for NPCs
 const npcLastFireTimes = new Map();
 
+// Add at the top of the file after imports
+const usedSpawnPositions = new Set();
+
+// Add scene initialization tracking
+let isSceneInitialized = false;
+
+// Define spawn zones at module scope
+const spawnZones = [
+    // Main street intersections with smaller radius to prevent bunching
+    { x: -60, z: -30, radius: 2.5 },
+    { x: -20, z: -30, radius: 2.5 },
+    { x: 20, z: -30, radius: 2.5 },
+    { x: 60, z: -30, radius: 2.5 },
+    { x: -60, z: 30, radius: 2.5 },
+    { x: -20, z: 30, radius: 2.5 },
+    { x: 20, z: 30, radius: 2.5 },
+    { x: 60, z: 30, radius: 2.5 },
+    
+    // Street segments with smaller radius
+    { x: -40, z: -30, radius: 2 },
+    { x: 0, z: -30, radius: 2 },
+    { x: 40, z: -30, radius: 2 },
+    { x: -40, z: 30, radius: 2 },
+    { x: 0, z: 30, radius: 2 },
+    { x: 40, z: 30, radius: 2 },
+    
+    // Vertical streets with distributed points
+    { x: -60, z: -15, radius: 2 },
+    { x: -60, z: 0, radius: 2 },
+    { x: -60, z: 15, radius: 2 },
+    { x: -20, z: -15, radius: 2 },
+    { x: -20, z: 0, radius: 2 },
+    { x: -20, z: 15, radius: 2 },
+    { x: 20, z: -15, radius: 2 },
+    { x: 20, z: 0, radius: 2 },
+    { x: 20, z: 15, radius: 2 },
+    { x: 60, z: -15, radius: 2 },
+    { x: 60, z: 0, radius: 2 },
+    { x: 60, z: 15, radius: 2 },
+    
+    // Additional points along horizontal streets
+    { x: -50, z: -30, radius: 2 },
+    { x: -30, z: -30, radius: 2 },
+    { x: -10, z: -30, radius: 2 },
+    { x: 10, z: -30, radius: 2 },
+    { x: 30, z: -30, radius: 2 },
+    { x: 50, z: -30, radius: 2 },
+    { x: -50, z: 30, radius: 2 },
+    { x: -30, z: 30, radius: 2 },
+    { x: -10, z: 30, radius: 2 },
+    { x: 10, z: 30, radius: 2 },
+    { x: 30, z: 30, radius: 2 },
+    { x: 50, z: 30, radius: 2 },
+    
+    // Central area points
+    { x: -40, z: 0, radius: 2 },
+    { x: -30, z: 0, radius: 2 },
+    { x: -10, z: 0, radius: 2 },
+    { x: 0, z: 0, radius: 2 },
+    { x: 10, z: 0, radius: 2 },
+    { x: 30, z: 0, radius: 2 },
+    { x: 40, z: 0, radius: 2 }
+];
+
+/**
+ * Initialize the NPC system with scene components
+ * @param {THREE.Scene} scene - The scene containing NPCs
+ * @param {CollisionSystem} collisionSystem - The collision system
+ * @param {SewerMap} map - The map containing buildings
+ */
+function initNPCSystem(scene, collisionSystem, map) {
+    if (!scene || !collisionSystem || !map) {
+        console.error('Missing required components for NPC system initialization');
+        return;
+    }
+    scene.userData.collisionSystem = collisionSystem;
+    scene.userData.map = map;
+    isSceneInitialized = true;
+}
+
 // NPC class for AI-controlled rat characters
 export class NPC {
   constructor(scene, position, options = {}) {
@@ -307,10 +387,9 @@ function updateNPCAI(npc, player, collisionSystem) {
             
             // Set direction towards player with minimal randomness for better accuracy
             const shootDirection = direction.clone();
-            // Reduce spread even further for better accuracy
-            shootDirection.x += (Math.random() - 0.5) * 0.01; // Reduced from 0.03
-            shootDirection.y += (Math.random() - 0.5) * 0.01; // Reduced from 0.02
-            shootDirection.z += (Math.random() - 0.5) * 0.01; // Reduced from 0.03
+            shootDirection.x += (Math.random() - 0.5) * 0.01;
+            shootDirection.y += (Math.random() - 0.5) * 0.01;
+            shootDirection.z += (Math.random() - 0.5) * 0.01;
             shootDirection.normalize();
             
             // Move projectile forward to prevent self-collision
@@ -321,15 +400,7 @@ function updateNPCAI(npc, player, collisionSystem) {
             projectile.userData.damage = 10;
             projectile.userData.speed = 2.0;
             projectile.userData.direction = shootDirection;
-            projectile.userData.fromNPC = true; // Mark as NPC projectile
-            
-            // Debug log for NPC shooting
-            debugLog(DEBUG_CATEGORIES.COMBAT, 'NPC shooting at player', {
-                npcPos: npc.position.clone(),
-                playerPos: player.position.clone(),
-                shootDirection: shootDirection.clone(),
-                distance: npc.position.distanceTo(player.position)
-            });
+            projectile.userData.fromNPC = true;
             
             // Add to scene
             npc.parent.add(projectile);
@@ -359,7 +430,6 @@ function updateNPCAI(npc, player, collisionSystem) {
     if (movement.length() > 0) {
         const collision = collisionSystem.checkCollision(npc.position, movement);
         if (collision.hasCollision) {
-            // Only move if we have an adjusted movement that doesn't collide
             if (collision.adjustedMovement.length() > 0) {
                 npc.position.add(collision.adjustedMovement);
             }
@@ -418,208 +488,45 @@ function updateNPCs(scene, player, collisionSystem) {
 }
 
 /**
- * Find a valid spawn point that doesn't collide with geometry and isn't inside a building
+ * Try to find a valid spawn point in a specific zone
+ * @param {Object} zone - The zone to try spawning in
  * @param {CollisionSystem} collisionSystem - The collision system
- * @param {SewerMap} map - The map containing buildings
- * @param {Set} usedPositions - Set of positions already used
- * @param {number} attempts - Maximum number of attempts to find valid position
- * @returns {THREE.Vector3} Valid spawn position or null if none found
+ * @param {Set} usedPositions - Set of used positions
+ * @returns {THREE.Vector3|null} - Valid spawn point or null
  */
-function findValidSpawnPoint(collisionSystem, map, usedPositions = new Set(), attempts = 20) {
-    // Define spawn zones across the entire map for better distribution
-    const spawnZones = [
-        // Main street intersections with smaller radius to prevent bunching
-        { x: -60, z: -30, radius: 2.5 },
-        { x: -20, z: -30, radius: 2.5 },
-        { x: 20, z: -30, radius: 2.5 },
-        { x: 60, z: -30, radius: 2.5 },
-        { x: -60, z: 30, radius: 2.5 },
-        { x: -20, z: 30, radius: 2.5 },
-        { x: 20, z: 30, radius: 2.5 },
-        { x: 60, z: 30, radius: 2.5 },
-        
-        // Street segments with smaller radius
-        { x: -40, z: -30, radius: 2 },
-        { x: 0, z: -30, radius: 2 },
-        { x: 40, z: -30, radius: 2 },
-        { x: -40, z: 30, radius: 2 },
-        { x: 0, z: 30, radius: 2 },
-        { x: 40, z: 30, radius: 2 },
-        
-        // Vertical streets with distributed points
-        { x: -60, z: -15, radius: 2 },
-        { x: -60, z: 0, radius: 2 },
-        { x: -60, z: 15, radius: 2 },
-        { x: -20, z: -15, radius: 2 },
-        { x: -20, z: 0, radius: 2 },
-        { x: -20, z: 15, radius: 2 },
-        { x: 20, z: -15, radius: 2 },
-        { x: 20, z: 0, radius: 2 },
-        { x: 20, z: 15, radius: 2 },
-        { x: 60, z: -15, radius: 2 },
-        { x: 60, z: 0, radius: 2 },
-        { x: 60, z: 15, radius: 2 },
-        
-        // Additional points along horizontal streets
-        { x: -50, z: -30, radius: 2 },
-        { x: -30, z: -30, radius: 2 },
-        { x: -10, z: -30, radius: 2 },
-        { x: 10, z: -30, radius: 2 },
-        { x: 30, z: -30, radius: 2 },
-        { x: 50, z: -30, radius: 2 },
-        { x: -50, z: 30, radius: 2 },
-        { x: -30, z: 30, radius: 2 },
-        { x: -10, z: 30, radius: 2 },
-        { x: 10, z: 30, radius: 2 },
-        { x: 30, z: 30, radius: 2 },
-        { x: 50, z: 30, radius: 2 },
-        
-        // Central area points
-        { x: -40, z: 0, radius: 2 },
-        { x: -30, z: 0, radius: 2 },
-        { x: -10, z: 0, radius: 2 },
-        { x: 0, z: 0, radius: 2 },
-        { x: 10, z: 0, radius: 2 },
-        { x: 30, z: 0, radius: 2 },
-        { x: 40, z: 0, radius: 2 }
-    ];
-
-    // Add minimum distance check between spawn points
-    const MIN_DISTANCE_BETWEEN_SPAWNS = 8; // Minimum units between NPCs
-
-    // Try to find a valid position within the given number of attempts
-    for (let i = 0; i < attempts; i++) {
-        // Pick a random spawn zone
-        const zone = spawnZones[Math.floor(Math.random() * spawnZones.length)];
-        
-        // Generate a random position within the zone
-        const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * zone.radius;
-        const x = zone.x + Math.cos(angle) * distance;
-        const z = zone.z + Math.sin(angle) * distance;
-        const position = new THREE.Vector3(x, 0, z);
-
-        // Check minimum distance from other spawn points
-        let tooClose = false;
-        for (const usedPos of usedPositions) {
-            const [usedX, usedZ] = usedPos.split(',').map(Number);
-            const usedPosition = new THREE.Vector3(usedX, 0, usedZ);
-            if (position.distanceTo(usedPosition) < MIN_DISTANCE_BETWEEN_SPAWNS) {
-                tooClose = true;
-                break;
+function trySpawnInZone(zone, collisionSystem, usedPositions) {
+    // Try multiple angles and distances within the zone
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2; // Evenly distribute angles
+        for (let j = 0; j < 3; j++) {
+            const distance = (j + 1) * (zone.radius / 3); // Try different distances from center
+            const testPoint = new THREE.Vector3(
+                zone.x + Math.cos(angle) * distance,
+                0,
+                zone.z + Math.sin(angle) * distance
+            );
+            
+            // Check if point is valid
+            const collision = collisionSystem.checkCollision(testPoint, new THREE.Vector3(0, 0, 0));
+            if (!collision.hasCollision) {
+                // Check minimum distance from other NPCs
+                let tooClose = false;
+                for (const usedPos of usedPositions) {
+                    const [usedX, usedZ] = usedPos.split(',').map(Number);
+                    const usedPosition = new THREE.Vector3(usedX, 0, usedZ);
+                    if (testPoint.distanceTo(usedPosition) < 5) { // Reduced minimum distance
+                        tooClose = true;
+                        break;
+                    }
+                }
+                
+                if (!tooClose) {
+                    return testPoint;
+                }
             }
         }
-
-        if (tooClose) {
-            continue;
-        }
-
-        // Skip if position is already used
-        const posKey = `${position.x.toFixed(2)},${position.z.toFixed(2)}`;
-        if (usedPositions.has(posKey)) {
-            continue;
-        }
-
-        // Check if we collide with any walls or buildings
-        const collision = collisionSystem.checkCollision(position, new THREE.Vector3(0, 0, 0));
-
-        if (!collision.hasCollision) {
-            // Valid position found - mark it as used and return
-            usedPositions.add(posKey);
-            return position;
-        }
     }
-
-    // If all attempts fail, use a fallback position at street intersections
-    const fallbackPositions = [
-        new THREE.Vector3(-60, 0, 0),  // Middle of vertical streets
-        new THREE.Vector3(-20, 0, 0),
-        new THREE.Vector3(20, 0, 0),
-        new THREE.Vector3(60, 0, 0),
-        new THREE.Vector3(0, 0, -30),  // Middle of horizontal streets
-        new THREE.Vector3(0, 0, 30),
-        new THREE.Vector3(-40, 0, -30), // Additional fallback positions
-        new THREE.Vector3(40, 0, -30),
-        new THREE.Vector3(-40, 0, 30),
-        new THREE.Vector3(40, 0, 30),
-        new THREE.Vector3(-60, 0, -15),
-        new THREE.Vector3(-20, 0, -15),
-        new THREE.Vector3(20, 0, -15),
-        new THREE.Vector3(60, 0, -15),
-        new THREE.Vector3(-60, 0, 15),
-        new THREE.Vector3(-20, 0, 15),
-        new THREE.Vector3(20, 0, 15),
-        new THREE.Vector3(60, 0, 15),
-        new THREE.Vector3(-30, 0, 0),
-        new THREE.Vector3(30, 0, 0)
-    ];
-
-    for (const position of fallbackPositions) {
-        const posKey = `${position.x.toFixed(2)},${position.z.toFixed(2)}`;
-        if (!usedPositions.has(posKey)) {
-            console.log('Using fallback spawn position:', position.clone());
-            usedPositions.add(posKey);
-            return position;
-        }
-    }
-
-    console.warn('Could not find valid spawn point after', attempts, 'attempts');
     return null;
-}
-
-/**
- * Create a new NPC at a valid position
- * @param {THREE.Scene} scene - The scene to add the NPC to
- * @param {CollisionSystem} collisionSystem - The collision system
- * @param {SewerMap} map - The map containing buildings
- * @param {THREE.Vector3} position - Optional specific position, otherwise finds valid spawn
- * @returns {NPC} The created NPC
- */
-function createNPC(scene, collisionSystem, map, position = null) {
-    // If no position provided, find a valid spawn point
-    if (!position) {
-        position = findValidSpawnPoint(collisionSystem, map);
-        if (!position) {
-            console.error('Could not find valid NPC spawn point');
-            return null;
-        }
-    }
-
-    // Create NPC with random movement pattern
-    const patterns = Object.values(MOVEMENT_PATTERNS);
-    const randomPattern = patterns[Math.floor(Math.random() * patterns.length)];
-    
-    const npc = new NPC(scene, position, {
-        pattern: randomPattern,
-        color: 0xFF0000 // Red for enemy NPCs
-    });
-    
-    return npc;
-}
-
-/**
- * Create multiple NPCs in the scene
- * @param {THREE.Scene} scene - The scene to add NPCs to
- * @param {CollisionSystem} collisionSystem - The collision system
- * @param {SewerMap} map - The map containing buildings
- * @param {number} count - Number of NPCs to create
- * @returns {NPC[]} Array of created NPCs
- */
-function createNPCs(scene, collisionSystem, map, count = NPC_COUNT) {
-    const npcs = [];
-    const usedPositions = new Set();
-    
-    for (let i = 0; i < count; i++) {
-        const position = findValidSpawnPoint(collisionSystem, map, usedPositions);
-        if (position) {
-            const npc = createNPC(scene, collisionSystem, map, position);
-            if (npc) {
-                npcs.push(npc);
-            }
-        }
-    }
-    
-    return npcs;
 }
 
 /**
@@ -627,7 +534,7 @@ function createNPCs(scene, collisionSystem, map, count = NPC_COUNT) {
  */
 function handleNPCDeath(scene, npc) {
     // Drop the rat to the ground
-    npc.rotation.z = Math.PI / 2; // Lay on side
+    npc.rotation.z = Math.PI / 2;
     
     // Hide health bar
     if (npc.userData.healthBar) {
@@ -641,9 +548,7 @@ function handleNPCDeath(scene, npc) {
     npc.userData.velocity = new THREE.Vector3(0, 0, 0);
     npc.userData.isGrounded = true;
     
-    console.log('[COMBAT] NPC defeated');
-    
-    // Respawn after delay (same as player's 3 second delay)
+    // Respawn after delay
     setTimeout(() => {
         // Reset health and state
         npc.userData.health = npc.userData.maxHealth;
@@ -660,19 +565,94 @@ function handleNPCDeath(scene, npc) {
         // Reset rotation
         npc.rotation.z = 0;
         
-        // Find new spawn point
-        const spawnPoint = findValidSpawnPoint(scene.userData.collisionSystem, scene.userData.map, new Set());
-        npc.position.copy(spawnPoint);
-        npc.position.y = 0.1; // Start slightly above ground
+        // Get collision system and map from scene
+        const collisionSystem = scene.userData.collisionSystem;
+        const map = scene.userData.map;
         
-        // Reset velocity and movement state
-        npc.userData.velocity = new THREE.Vector3(0, 0, 0);
-        npc.userData.isGrounded = true;
+        if (!collisionSystem || !map) {
+            console.error('Missing required scene components for NPC respawn');
+            return;
+        }
+
+        // Try to find a spawn point
+        let spawnPoint = null;
         
-        debugLog(DEBUG_CATEGORIES.COMBAT, 'NPC respawned', {
-            health: npc.userData.health,
-            position: spawnPoint.clone()
-        });
+        // First try street intersections
+        const streetIntersections = spawnZones.filter(zone => zone.radius === 2.5);
+        for (const zone of streetIntersections) {
+            spawnPoint = trySpawnInZone(zone, collisionSystem, usedSpawnPositions);
+            if (spawnPoint) break;
+        }
+        
+        // If no intersection works, try street segments
+        if (!spawnPoint) {
+            const streetSegments = spawnZones.filter(zone => zone.radius === 2);
+            for (const zone of streetSegments) {
+                spawnPoint = trySpawnInZone(zone, collisionSystem, usedSpawnPositions);
+                if (spawnPoint) break;
+            }
+        }
+        
+        // If still no point found, try a spiral pattern around the origin
+        if (!spawnPoint) {
+            const spiralAttempts = 20;
+            const spiralSpacing = 5;
+            for (let i = 0; i < spiralAttempts; i++) {
+                const angle = i * 0.5;
+                const radius = spiralSpacing * (i / spiralAttempts);
+                const testPoint = new THREE.Vector3(
+                    Math.cos(angle) * radius,
+                    0,
+                    Math.sin(angle) * radius
+                );
+                
+                const collision = collisionSystem.checkCollision(testPoint, new THREE.Vector3(0, 0, 0));
+                if (!collision.hasCollision) {
+                    spawnPoint = testPoint;
+                    break;
+                }
+            }
+        }
+        
+        if (spawnPoint) {
+            // Remove old position from used positions if it exists
+            const oldPosKey = `${npc.position.x.toFixed(2)},${npc.position.z.toFixed(2)}`;
+            usedSpawnPositions.delete(oldPosKey);
+            
+            // Update to new position
+            npc.position.copy(spawnPoint);
+            npc.position.y = 0.1; // Start slightly above ground
+            
+            // Add new position to used positions
+            const newPosKey = `${spawnPoint.x.toFixed(2)},${spawnPoint.z.toFixed(2)}`;
+            usedSpawnPositions.add(newPosKey);
+            
+            // Reset velocity and movement state
+            npc.userData.velocity = new THREE.Vector3(0, 0, 0);
+            npc.userData.isGrounded = true;
+        } else {
+            // Last resort - use a random position along the map edges
+            const edge = Math.floor(Math.random() * 4);
+            const pos = Math.random() * 160 - 80; // -80 to 80
+            
+            switch(edge) {
+                case 0: // North
+                    spawnPoint = new THREE.Vector3(pos, 0, -90);
+                    break;
+                case 1: // South
+                    spawnPoint = new THREE.Vector3(pos, 0, 90);
+                    break;
+                case 2: // East
+                    spawnPoint = new THREE.Vector3(-90, 0, pos);
+                    break;
+                case 3: // West
+                    spawnPoint = new THREE.Vector3(90, 0, pos);
+                    break;
+            }
+            
+            npc.position.copy(spawnPoint);
+            npc.position.y = 0.1;
+        }
     }, 3000);
 }
 
@@ -884,6 +864,84 @@ function addHealthBar(npc) {
     }
 }
 
+/**
+ * Create a single NPC at the specified position
+ * @param {THREE.Scene} scene - The scene to add the NPC to
+ * @param {THREE.Vector3} position - The spawn position
+ * @param {Object} options - Additional options for NPC creation
+ * @returns {NPC} The created NPC instance
+ */
+function createNPC(scene, position, options = {}) {
+    return new NPC(scene, position, options);
+}
+
+/**
+ * Create multiple NPCs in the scene
+ * @param {THREE.Scene} scene - The scene to add NPCs to
+ * @param {CollisionSystem} collisionSystem - The collision system
+ * @param {number} count - Number of NPCs to create (default: NPC_COUNT)
+ * @returns {Array} Array of created NPCs
+ */
+function createNPCs(scene, collisionSystem, count = NPC_COUNT) {
+    if (!scene || !collisionSystem) {
+        console.error('Missing required components for NPC creation');
+        return [];
+    }
+
+    const createdNPCs = [];
+
+    for (let i = 0; i < count; i++) {
+        let spawnPoint = null;
+        
+        // Try to find a valid spawn point
+        for (const zone of spawnZones) {
+            spawnPoint = trySpawnInZone(zone, collisionSystem, usedSpawnPositions);
+            if (spawnPoint) break;
+        }
+        
+        // If no valid point found in zones, use a random edge position
+        if (!spawnPoint) {
+            const edge = Math.floor(Math.random() * 4);
+            const pos = Math.random() * 160 - 80; // -80 to 80
+            
+            switch(edge) {
+                case 0: // North
+                    spawnPoint = new THREE.Vector3(pos, 0, -90);
+                    break;
+                case 1: // South
+                    spawnPoint = new THREE.Vector3(pos, 0, 90);
+                    break;
+                case 2: // East
+                    spawnPoint = new THREE.Vector3(-90, 0, pos);
+                    break;
+                case 3: // West
+                    spawnPoint = new THREE.Vector3(90, 0, pos);
+                    break;
+            }
+        }
+        
+        if (spawnPoint) {
+            // Create NPC with random movement pattern
+            const patterns = Object.values(MOVEMENT_PATTERNS);
+            const randomPattern = patterns[Math.floor(Math.random() * patterns.length)];
+            
+            const npc = createNPC(scene, spawnPoint, {
+                pattern: randomPattern,
+                speed: NPC_MOVEMENT_SPEED * (0.8 + Math.random() * 0.4), // Random speed variation
+                color: new THREE.Color(0.8 + Math.random() * 0.2, 0, 0) // Random red variation
+            });
+            
+            createdNPCs.push(npc);
+            
+            // Add spawn point to used positions
+            const posKey = `${spawnPoint.x.toFixed(2)},${spawnPoint.z.toFixed(2)}`;
+            usedSpawnPositions.add(posKey);
+        }
+    }
+
+    return createdNPCs;
+}
+
 // Export all necessary functions at the end of the file
 export {
     createNPC,
@@ -894,7 +952,7 @@ export {
     addHealthBar,
     flashNPC,
     createImpactEffect,
-    // Export hitbox constants
+    initNPCSystem,
     NPC_HITBOX_WIDTH,
     NPC_HITBOX_HEIGHT,
     NPC_HITBOX_DEPTH

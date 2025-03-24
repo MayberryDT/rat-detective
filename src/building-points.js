@@ -36,32 +36,6 @@ export function isPointInsideBuilding(point, map) {
         // - Top is at position.y + size.y/2
         const withinY = point.y >= (position.y - size.y/2) && point.y <= (position.y + size.y/2);
         
-        // Debug logging
-        if (withinX || withinZ || withinY) {
-            console.log('Building check:', {
-                building: building.name,
-                point: {
-                    x: point.x,
-                    y: point.y,
-                    z: point.z
-                },
-                position: {
-                    x: position.x,
-                    y: position.y,
-                    z: position.z
-                },
-                size,
-                bounds: {
-                    x: { min: position.x - halfWidth, max: position.x + halfWidth },
-                    y: { min: position.y - size.y/2, max: position.y + size.y/2 },
-                    z: { min: position.z - halfDepth, max: position.z + halfDepth }
-                },
-                withinX,
-                withinZ,
-                withinY
-            });
-        }
-        
         if (withinX && withinY && withinZ) {
             return true;
         }

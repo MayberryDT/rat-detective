@@ -9,12 +9,7 @@ export class CollisionSystem {
     this.projectileCollisionDistance = 0.1;
     this.isGrounded = false;
     
-    // Initialize debug mode
-    this.debugMode = true;  // Set to true to enable detailed logging
-    
-    console.log('Collision system initialized - DEBUG VERSION 23');
-    
-    // Store debug stats
+    // Initialize stats object
     this.stats = {
       totalCollisions: 0,
       wallCollisions: 0,
@@ -26,12 +21,8 @@ export class CollisionSystem {
       lastCollisionTime: 0,
       lastUpdateTime: 0
     };
-  }
-
-  debugLog(message, data = {}) {
-    if (this.debugMode) {
-      console.log(`[Collision Debug] ${message}`, data);
-    }
+    
+    console.log('Collision system initialized - DEBUG VERSION 23');
   }
 
   checkCollision(position, movement) {
@@ -41,42 +32,11 @@ export class CollisionSystem {
       isGrounded: false
     };
 
-    this.debugLog('Starting collision check', {
-      position: position.clone(),
-      movement: movement.clone()
-    });
-
-    // Add debouncing for collision stats to prevent rapid updates
-    const now = Date.now();
-    const updateInterval = 500; // Only update stats every 500ms
-    const shouldUpdateStats = now - this.stats.lastUpdateTime > updateInterval;
-    
-    if (shouldUpdateStats) {
-      this.stats.lastUpdateTime = now;
-    }
-
     // Check wall collisions FIRST and return early if there's a collision
     const wallCollision = this.checkWallCollisions(position, movement);
     if (wallCollision.hasCollision) {
       result.hasCollision = true;
       result.adjustedMovement.copy(wallCollision.adjustedMovement);
-      
-      this.debugLog('Wall collision detected', {
-        originalMovement: movement.clone(),
-        adjustedMovement: result.adjustedMovement.clone(),
-        collisionNormal: wallCollision.collisionNormal,
-        isPipeCollision: wallCollision.isPipeCollision
-      });
-      
-      if (shouldUpdateStats) {
-        if (wallCollision.isPipeCollision) {
-          this.stats.pipeCollisions++;
-        } else {
-          this.stats.wallCollisions++;
-        }
-        this.stats.totalCollisions++;
-      }
-      
       return result;  // Return immediately after wall collision
     }
 
@@ -87,10 +47,6 @@ export class CollisionSystem {
     if (ceilingCollision.hasCollision) {
       result.hasCollision = true;
       result.adjustedMovement.y = ceilingCollision.adjustedMovement.y;
-      
-      if (shouldUpdateStats) {
-        this.stats.ceilingCollisions++;
-      }
     }
 
     // Check floor collisions last
@@ -99,29 +55,6 @@ export class CollisionSystem {
       result.hasCollision = true;
       result.adjustedMovement.y = floorCollision.adjustedMovement.y;
       result.isGrounded = true;
-      
-      if (shouldUpdateStats) {
-        this.stats.floorCollisions++;
-      }
-    }
-
-    if (result.hasCollision && shouldUpdateStats) {
-      this.stats.totalCollisions++;
-      
-      // Update debug info in DOM if available
-      if (typeof window !== 'undefined' && document.getElementById('debug-info')) {
-        const debugElement = document.getElementById('debug-info');
-        debugElement.innerHTML = `
-          Version: 23<br>
-          Collisions: ${this.stats.totalCollisions}<br>
-          Walls: ${this.stats.wallCollisions}<br>
-          Floors: ${this.stats.floorCollisions}<br>
-          Pipes: ${this.stats.pipeCollisions}<br>
-          Ceiling: ${this.stats.ceilingCollisions}<br>
-          Ramps: ${this.stats.rampCollisions}<br>
-          Projectiles: ${this.stats.projectileCollisions}
-        `;
-      }
     }
 
     this.isGrounded = result.isGrounded;
@@ -181,12 +114,6 @@ export class CollisionSystem {
       collisionNormal: null
     };
 
-    this.debugLog('Checking wall collisions', {
-      position: position.clone(),
-      movement: movement.clone(),
-      collisionDistance: this.collisionDistance
-    });
-
     // Get potential wall objects with a simpler filter
     const collisionObjects = this.map.getAllCollisionObjects().filter(obj => {
       return (
@@ -194,10 +121,6 @@ export class CollisionSystem {
         obj.userData?.colliderType === 'wall' ||
         obj.name?.includes('wall')
       );
-    });
-
-    this.debugLog('Found wall objects', {
-      count: collisionObjects.length
     });
 
     // Cast rays at multiple heights
@@ -238,14 +161,6 @@ export class CollisionSystem {
           if (hit.distance < minDistance && hit.distance < this.collisionDistance) {
             minDistance = hit.distance;
             closestHit = hit;
-            
-            this.debugLog('Found potential collision', {
-              height,
-              direction: direction.clone(),
-              distance: hit.distance,
-              objectName: hit.object.name,
-              objectType: hit.object.userData?.colliderType
-            });
           }
         }
       }
@@ -260,12 +175,6 @@ export class CollisionSystem {
       const normal = closestHit.face.normal.clone();
       normal.transformDirection(closestHit.object.matrixWorld);
       result.collisionNormal = normal;
-      
-      this.debugLog('Processing collision response', {
-        collisionNormal: normal.clone(),
-        distance: minDistance,
-        objectName: closestHit.object.name
-      });
       
       // Calculate the pushback direction (away from wall)
       const pushbackDistance = this.collisionDistance - minDistance;
@@ -282,12 +191,6 @@ export class CollisionSystem {
         
         // Apply sliding while maintaining pushback
         result.adjustedMovement.add(slide.multiplyScalar(friction));
-        
-        this.debugLog('Calculated response', {
-          pushback: pushback.clone(),
-          slide: slide.clone(),
-          finalAdjustedMovement: result.adjustedMovement.clone()
-        });
       }
     }
 

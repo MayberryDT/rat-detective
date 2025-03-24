@@ -3,14 +3,34 @@
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
 import { createRat } from './rat.js';
+import { debugLog, DEBUG_CATEGORIES } from './debug.js';
 
-// Define the server URL - use relative URL in production, localhost for development
+// Define the server URL based on environment
 const SERVER_URL = process.env.NODE_ENV === 'production' 
   ? window.location.origin 
   : 'http://localhost:3000';
 
+// Prevent multiple connections in development
+let socket = null;
+
 // Constants
 const CULLING_DISTANCE = 100; // Must match server value
+const CONNECTION_OPTIONS = {
+  transports: ['websocket', 'polling'],
+  withCredentials: true,
+  forceNew: true,
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+  timeout: 20000,
+  autoConnect: false,
+  upgrade: true,
+  path: '/socket.io/',
+  query: {
+    clientTime: Date.now(),
+    clientVersion: '1.0.0'
+  }
+};
 
 /**
  * Initialize the multiplayer system
@@ -19,11 +39,57 @@ const CULLING_DISTANCE = 100; // Must match server value
  * @return {Object} The socket and players map
  */
 export function initMultiplayer(scene, localRat) {
-  console.log('Initializing multiplayer...');
+  debugLog(DEBUG_CATEGORIES.SCENE, 'Starting multiplayer initialization');
+
+  // If we already have a socket connection, return it
+  if (socket) {
+    debugLog(DEBUG_CATEGORIES.SCENE, 'Reusing existing socket connection', { socketId: socket.id });
+    return { socket, players: new Map() };
+  }
+
+  debugLog(DEBUG_CATEGORIES.SCENE, 'Creating new socket connection', {
+    url: SERVER_URL,
+    options: CONNECTION_OPTIONS
+  });
   
-  // Connect to the WebSocket server
-  const socket = io(SERVER_URL);
-  
+  // Connect to the WebSocket server with options
+  try {
+    socket = io(SERVER_URL, CONNECTION_OPTIONS);
+    debugLog(DEBUG_CATEGORIES.SCENE, 'Socket created', {
+      id: socket.id,
+      connected: socket.connected
+    });
+
+    // Add connection event handlers
+    socket.on('connect', () => {
+      debugLog(DEBUG_CATEGORIES.SCENE, 'Socket connected successfully', { socketId: socket.id });
+    });
+
+    socket.on('connect_error', (error) => {
+      debugLog(DEBUG_CATEGORIES.SCENE, 'Socket connection error', { error: error.message });
+    });
+
+    socket.on('disconnect', (reason) => {
+      debugLog(DEBUG_CATEGORIES.SCENE, 'Socket disconnected', { reason });
+    });
+
+    socket.on('reconnect', (attemptNumber) => {
+      debugLog(DEBUG_CATEGORIES.SCENE, 'Socket reconnected', { attemptNumber });
+    });
+
+    socket.on('reconnect_error', (error) => {
+      debugLog(DEBUG_CATEGORIES.SCENE, 'Socket reconnection error', { error: error.message });
+    });
+
+    socket.on('reconnect_failed', () => {
+      debugLog(DEBUG_CATEGORIES.SCENE, 'Socket reconnection failed');
+    });
+
+  } catch (error) {
+    console.error('Failed to create socket:', error);
+    throw error;
+  }
+
   // Map to store other players' rat models
   const players = new Map();
   
@@ -36,18 +102,6 @@ export function initMultiplayer(scene, localRat) {
   // Handle spawn point assignment
   socket.on('spawnPoint', (spawnPoint) => {
     localRat.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
-  });
-  
-  // Handle socket connection
-  socket.on('connect', () => {
-    console.log('Connected to server with ID:', socket.id);
-    
-    // Initialize position update interval
-    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'test') {
-      setInterval(() => {
-        updatePlayerPosition(socket, localRat);
-      }, 50); // 20 updates per second
-    }
   });
   
   // Handle new player connection
@@ -133,6 +187,29 @@ export function initMultiplayer(scene, localRat) {
     }
   });
   
+  // Clean up socket on HMR
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      if (socket) {
+        console.log('Cleaning up socket connection on HMR update');
+        socket.disconnect();
+        socket = null;
+      }
+    });
+  }
+
+  // Explicitly attempt connection
+  debugLog(DEBUG_CATEGORIES.SCENE, 'Attempting socket connection');
+  socket.connect();
+
+  // Debug connection state
+  debugLog(DEBUG_CATEGORIES.SCENE, 'Initial socket state', {
+    id: socket.id,
+    connected: socket.connected,
+    disconnected: socket.disconnected,
+    transport: socket.io?.engine?.transport?.name
+  });
+
   return { socket, players };
 }
 
